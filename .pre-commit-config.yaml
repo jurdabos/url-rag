@@ -1,0 +1,13 @@
+repos:
+  # fast uv-powered helpers maintained by Astral
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.8.15
+    hooks:
+      - id: uv-lock           # keep uv.lock fresh
+      - id: uv-export         # keep requirements.txt synced (optional)
+
+  # gitleaks hook (native binary)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2              # a known tag; then run `pre-commit autoupdate` to bump
+    hooks:
+      - id: gitleaks
