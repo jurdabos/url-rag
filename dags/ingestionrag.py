@@ -1,12 +1,14 @@
 """
-## RAG ingestion pipeline
-Builds the vector store for RAG by:
-1. **Fetch** – Scrapes content from configured web URLs
-2. **Chunk** – Splits documents into overlapping text chunks
-3. **Embed** – Generates vector embeddings via OpenAI
-4. **Store** – Upserts embeddings into Pinecone
-Publishes the `rag_index` asset on completion so downstream DAGs
-(like `rag_query`) know fresh data is available.
+## RAG ingestion pipeline (with CDC)
+Builds and **incrementally maintains** the vector store for RAG.
+Only documents whose content changed since the last run are re-embedded,
+saving OpenAI API credits and Pinecone write units.
+1. **Fetch** – Scrapes web URLs, hashes content, detects changes
+2. **Chunk** – Splits *changed* documents into overlapping text chunks
+3. **Embed** – Generates vector embeddings via OpenAI (changed only)
+4. **Store** – Deletes stale vectors, upserts new ones, saves hash manifest
+Scheduled to run every 14 days.  Publishes the `rag_index` asset on
+completion so downstream DAGs (like `rag_query`) know fresh data is available.
 ### Required Airflow variables
 `OPENAI_API_KEY`
 `PINECONE_API_KEY`
@@ -101,6 +103,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
 MAX_CONTENT_CHARS = 5_000_000
 DATA_DIR = "/tmp/rag_pipeline"
+CONTENT_HASHES_VAR = "rag_content_hashes"
 
 # URL patterns that won't yield useful scrapeable text
 SKIP_EXTENSIONS = (
@@ -135,7 +138,7 @@ rag_index = Asset("rag_index")
 
 @dag(
     start_date=datetime(2026,3,3),
-    schedule=None,
+    schedule=timedelta(days=14),
     catchup=False,
     doc_md=__doc__,
     default_args={"owner": "data-team", "retries": 2},
@@ -143,13 +146,12 @@ rag_index = Asset("rag_index")
 )
 def rag_ingest():
     @task(execution_timeout=timedelta(minutes=10))
-    def fetch_documents() -> str:
-        """Fetches and parses content from web URLs using concurrent requests.
+    def fetch_documents() -> dict:
+        """Fetches web URLs, hashes content, and detects changes via CDC.
 
-        Pre-filters URLs unlikely to yield useful text (PDFs, images,
-        auth-gated pages, media players, localhost) and caps each
-        document's content to MAX_CONTENT_CHARS.  Writes results to a
-        JSON file on disk and returns the file path (keeping XCom tiny).
+        Compares SHA-256 hashes against the previous run's manifest
+        (stored in Airflow Variable) and writes only changed documents
+        to disk.  Returns paths to the documents file and CDC manifest.
         """
         import os
         import requests
@@ -237,12 +239,54 @@ def rag_ingest():
             "Fetched %d docs (%d chars total), skipped %d (pre-filter) + %d (fetch errors)",
             len(documents), total_chars, pre_skipped, fetch_skipped,
         )
-        # Writing to file instead of returning via XCom to avoid httpx timeout
-        out_path = f"{DATA_DIR}/documents.json"
-        with open(out_path, "w", encoding="utf-8") as fh:
-            json.dump(documents, fh, ensure_ascii=False)
-        logger.info("Wrote %d documents to %s", len(documents), out_path)
-        return out_path
+        # --- CDC: content hashing and change detection ---
+        import hashlib
+        current_hashes = {}
+        for doc in documents:
+            doc["content_hash"] = hashlib.sha256(doc["content"].encode()).hexdigest()
+            current_hashes[doc["url"]] = doc["content_hash"]
+        # Loading previous hash manifest
+        try:
+            previous_hashes = json.loads(Variable.get(CONTENT_HASHES_VAR))
+        except Exception:
+            previous_hashes = {}
+            logger.info("No previous hash manifest found — treating all URLs as new")
+        # Partitioning into changed vs. unchanged
+        changed_docs = []
+        unchanged_count = 0
+        for doc in documents:
+            if previous_hashes.get(doc["url"]) == doc["content_hash"]:
+                unchanged_count += 1
+            else:
+                changed_docs.append(doc)
+        # Detecting removed URLs (in previous manifest but no longer in URL list)
+        current_url_set = set(filtered_urls)
+        removed_urls = [u for u in previous_hashes if u not in current_url_set]
+        # Building new hash map: preserving hashes for fetch-failed URLs still in list
+        all_hashes = {
+            u: h for u, h in previous_hashes.items()
+            if u in current_url_set and u not in current_hashes
+        }
+        all_hashes.update(current_hashes)
+        logger.info(
+            "CDC: %d changed, %d unchanged, %d removed, %d failed (hash preserved)",
+            len(changed_docs), unchanged_count, len(removed_urls),
+            len(all_hashes) - len(current_hashes),
+        )
+        # Writing only changed docs to disk
+        docs_path = f"{DATA_DIR}/documents.json"
+        with open(docs_path, "w", encoding="utf-8") as fh:
+            json.dump(changed_docs, fh, ensure_ascii=False)
+        # Writing CDC manifest for downstream tasks
+        manifest_path = f"{DATA_DIR}/cdc_manifest.json"
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump({
+                "changed_urls": [d["url"] for d in changed_docs],
+                "removed_urls": removed_urls,
+                "all_hashes": all_hashes,
+            }, fh, ensure_ascii=False)
+        logger.info("Wrote %d changed documents to %s", len(changed_docs), docs_path)
+        return {"docs_path": docs_path, "manifest_path": manifest_path}
 
     @task()
     def chunk_documents(docs_path: str) -> str:
@@ -276,6 +320,7 @@ def rag_ingest():
                             "source_url": doc["url"],
                             "title": doc["title"],
                             "chunk_index": chunk_index,
+                            "content_hash": doc.get("content_hash", ""),
                         },
                     }
                 )
@@ -299,6 +344,12 @@ def rag_ingest():
         import time
         with open(chunks_path, "r", encoding="utf-8") as fh:
             chunks = json.load(fh)
+        if not chunks:
+            logger.info("No chunks to embed — skipping API call")
+            out_path = f"{DATA_DIR}/embedded_chunks.json"
+            with open(out_path, "w") as fh:
+                json.dump([], fh)
+            return out_path
         client, prefix = _get_openai_client()
         model = f"{prefix}{EMBEDDING_MODEL}"
         # Using smaller batches for OpenRouter to avoid empty responses
@@ -356,13 +407,12 @@ def rag_ingest():
         return out_path
 
     @task(outlets=[rag_index])
-    def upsert_to_pinecone(embedded_path: str) -> dict:
-        """Upserts embedded chunks into Pinecone.
+    def upsert_to_pinecone(embedded_path: str, manifest_path: str) -> dict:
+        """Syncs the Pinecone index with changed content.
 
-        Streams the embedded-chunks JSON file item by item via ijson
-        to avoid loading the entire file (500 MB+) into memory.
-        Retries failed batches and skips them after max_retries.
-        Truncates chunk text in metadata to stay under Pinecone's 40 KB limit.
+        Reads the CDC manifest to delete stale vectors for changed/removed
+        URLs, then streams and upserts new embeddings.  Persists the
+        content-hash manifest to an Airflow Variable on success.
         """
         import time
         import ijson
@@ -394,6 +444,29 @@ def rag_ingest():
                 time.sleep(2)
             logger.info("Index %s is ready", index_name)
         index = pc.Index(index_name)
+        # --- CDC: deleting stale vectors for changed/removed URLs ---
+        with open(manifest_path, "r", encoding="utf-8") as mfh:
+            manifest = json.load(mfh)
+        urls_to_purge = manifest.get("changed_urls", []) + manifest.get("removed_urls", [])
+        total_deleted = 0
+        if urls_to_purge:
+            logger.info("Purging vectors for %d changed/removed URLs", len(urls_to_purge))
+            for url in urls_to_purge:
+                prefix = f"{url}::chunk_"
+                ids_to_delete = []
+                try:
+                    for page in index.list(prefix=prefix):
+                        ids_to_delete.extend(page)
+                except Exception as exc:
+                    logger.warning("Failed to list vectors for %s: %s", url[:80], exc)
+                if ids_to_delete:
+                    try:
+                        index.delete(ids=ids_to_delete)
+                        total_deleted += len(ids_to_delete)
+                        logger.debug("Deleted %d vectors for %s", len(ids_to_delete), url[:80])
+                    except Exception as exc:
+                        logger.error("Failed to delete vectors for %s: %s", url[:80], exc)
+            logger.info("Deleted %d stale vectors total", total_deleted)
         batch_size = 100
         max_retries = 3
         max_meta_text = 30_000  # to stay safely under Pinecone's 40 KB metadata limit
@@ -450,17 +523,23 @@ def rag_ingest():
             if upserted == 0:
                 total_skipped += len(batch)
             logger.info("Upserted batch %d (%d total)", batch_num, total_upserted)
+        # --- CDC: persisting the new hash manifest ---
+        all_hashes = manifest.get("all_hashes", {})
+        if all_hashes:
+            Variable.set(CONTENT_HASHES_VAR, json.dumps(all_hashes))
+            logger.info("Saved hash manifest (%d entries) to Airflow Variable", len(all_hashes))
         result = {
             "index_name": index_name,
             "chunks_upserted": total_upserted,
             "chunks_skipped": total_skipped,
+            "chunks_deleted": total_deleted,
         }
         logger.info("Upsert complete: %s", result)
         return result
 
-    docs_path = fetch_documents()
-    chunks_path = chunk_documents(docs_path)
+    fetch_result = fetch_documents()
+    chunks_path = chunk_documents(fetch_result["docs_path"])
     embedded_path = generate_embeddings(chunks_path)
-    upsert_to_pinecone(embedded_path)
+    upsert_to_pinecone(embedded_path, fetch_result["manifest_path"])
 
 rag_ingest()
