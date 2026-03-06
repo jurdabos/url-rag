@@ -2516,6 +2516,7 @@ dependencies = [
     { name = "openai" },
     { name = "pendulum" },
     { name = "pinecone" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -2526,6 +2527,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.24.0" },
     { name = "pendulum", specifier = ">=3.2.0" },
     { name = "pinecone", specifier = ">=8.1.0" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
 ]
 
 [[package]]

@@ -145,7 +145,30 @@ def _auto_commit_message(dvc_files: list[str]) -> str:
 
 @click.group()
 def cli() -> None:
-    """CLI tools."""
+    """CLI tools for the url-rag project."""
+
+
+@cli.command("query")
+@click.argument("question")
+@click.option("--top-k", "-k", default=5, show_default=True, help="Number of chunks to retrieve")
+@click.option("--verbose", "-v", is_flag=True, help="Show sources and chunk count")
+def query_cmd(question: str, top_k: int, verbose: bool) -> None:
+    """Asks a question against the RAG knowledge base.
+
+    Example:  uv run url-rag query "Where is Casa del Libro?"
+    """
+    from url_rag.rag import ask
+    click.echo(click.style("⏳ Querying knowledge base ...", fg="cyan"))
+    try:
+        result = ask(question, top_k=top_k)
+    except Exception as exc:
+        click.echo(click.style(f"✗ {exc}", fg="red"), err=True)
+        raise SystemExit(1)
+    click.echo(f"\n{result['answer']}")
+    if verbose:
+        click.echo(click.style(f"\n— {result['chunks_retrieved']} chunks from {len(result['sources'])} source(s):", dim=True))
+        for src in result["sources"]:
+            click.echo(click.style(f"  • {src}", dim=True))
 
 
 @cli.command("push")
