@@ -1,0 +1,8 @@
+api-server:
+    port: "8083"
+postgres:
+    port: "5436"
+project:
+    name: url-rag
+webserver:
+    port: "8083"

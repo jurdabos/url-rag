@@ -120,3 +120,6 @@ test_output.*
 *.mo
 *.pot
 webdrivers/
+
+# URL list (may contain secrets in query strings)
+include/urls.json
