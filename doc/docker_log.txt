@@ -1,0 +1,4 @@
+docker ps --filter "name=url-rag" --format "{{.Names}}\t{{.Status}}"
+
+docker logs url-rag_7f6dd2-scheduler-1 2>&1 | tail -200
+

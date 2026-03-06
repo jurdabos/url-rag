@@ -1,0 +1,11 @@
+# Variables are set from .env via AIRFLOW_VAR_ prefix.
+# The ${...} syntax does NOT interpolate in Astro Runtime 3;
+# it stores the literal string.  Add these lines to .env instead:
+#   AIRFLOW_VAR_OPENAI_API_KEY=<your key>
+#   AIRFLOW_VAR_OPENROUTER_API_KEY=<your key>
+#   AIRFLOW_VAR_PINECONE_API_KEY=<your key>
+#   AIRFLOW_VAR_PINECONE_INDEX_NAME=rag-index
+airflow:
+  variables: []
+  connections: []
+  pools: []

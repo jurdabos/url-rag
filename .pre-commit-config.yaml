@@ -4,7 +4,9 @@ repos:
     rev: 0.8.15
     hooks:
       - id: uv-lock           # keep uv.lock fresh
-      - id: uv-export         # keep requirements.txt synced (optional)
+      # NOTE: uv-export is NOT used here because requirements.txt lists only
+      # direct deps for the Astronomer Docker image (which resolves transitive
+      # deps itself). Keep requirements.txt in sync with pyproject.toml manually.
 
   # gitleaks hook (native binary)
   - repo: https://github.com/gitleaks/gitleaks
