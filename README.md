@@ -21,7 +21,10 @@ Retrieval-Augmented Generation pipeline built with **Apache Airflow**, **Pinecon
    astro dev start
    ```
 4. **Run the ingestion DAG** from the Airflow UI to populate the vector store.
-5. **Trigger the query DAG** with your question in the `query` parameter.
+5. **Trigger the query DAG** with your question in the `query` parameter or use the Click CLI with
+   ```bash
+uv run url-rag query "What is your real question?"
+   ```
 
 ## Required Airflow variables
 

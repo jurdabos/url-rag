@@ -29,26 +29,26 @@ def _get_env(key: str, default: str | None = None) -> str:
 def _get_openai_client() -> tuple:
     """Returns (OpenAI client, model_prefix).
 
-    Tries the OPENAI_API_KEY first; falls back to OPENROUTER_API_KEY
+    Tries OpenRouter first; falls back to direct OpenAI
     on authentication or rate-limit errors.
     """
     from openai import AuthenticationError, OpenAI, RateLimitError
     try:
-        client = OpenAI(api_key=_get_env("OPENAI_API_KEY"))
-        # Probing with a 1-token embedding to catch quota errors
-        client.embeddings.create(input=["ping"], model=EMBEDDING_MODEL)
-        logger.info("Using OpenAI directly")
-        return client, ""
+        client = OpenAI(
+            api_key=_get_env("OPENROUTER_API_KEY"),
+            base_url=OPENROUTER_BASE_URL,
+        )
+        # Probing with a 1-token embedding to verify the key works
+        client.embeddings.create(input=["ping"], model=f"openai/{EMBEDDING_MODEL}")
+        logger.info("Using OpenRouter")
+        return client, "openai/"
     except (AuthenticationError, RateLimitError) as exc:
-        logger.warning("OpenAI unavailable (%s), falling back to OpenRouter", exc)
+        logger.warning("OpenRouter unavailable (%s), falling back to OpenAI", exc)
     except Exception as exc:
-        logger.warning("OpenAI unavailable (%s), falling back to OpenRouter", exc)
-    client = OpenAI(
-        api_key=_get_env("OPENROUTER_API_KEY"),
-        base_url=OPENROUTER_BASE_URL,
-    )
-    logger.info("Using OpenRouter as fallback")
-    return client, "openai/"
+        logger.warning("OpenRouter unavailable (%s), falling back to OpenAI", exc)
+    client = OpenAI(api_key=_get_env("OPENAI_API_KEY"))
+    logger.info("Using OpenAI as fallback")
+    return client, ""
 
 
 def embed_query(query: str) -> list[float]:
