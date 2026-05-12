@@ -39,31 +39,31 @@ def _get_var(key: str, default: str | None = None) -> str:
 def _get_openai_client() -> tuple:
     """Returns (OpenAI client, model_prefix).
 
-    Tries OpenAI first; falls back to OpenRouter on auth (401)
+    Tries OpenRouter first; falls back to direct OpenAI on auth (401)
     or rate-limit/quota (429) errors.
-    model_prefix is "" for direct OpenAI, "openai/" for OpenRouter.
+    model_prefix is "openai/" for OpenRouter, "" for direct OpenAI.
     Uses a minimal embedding call as the probe because models.list()
     is a free metadata endpoint that succeeds even when quota is exhausted.
     """
     from openai import AuthenticationError, RateLimitError, OpenAI
     try:
-        client = OpenAI(api_key=_get_var("OPENAI_API_KEY"))
-        # Probing with a 1-token embedding; models.list() does NOT catch quota errors
-        client.embeddings.create(input=["ping"], model=EMBEDDING_MODEL)
-        logger.info("Using OpenAI directly")
-        return client, ""
+        client = OpenAI(
+            api_key=_get_var("OPENROUTER_API_KEY"),
+            base_url=OPENROUTER_BASE_URL,
+        )
+        # Probing with a 1-token embedding to verify the key works
+        client.embeddings.create(input=["ping"], model=f"openai/{EMBEDDING_MODEL}")
+        logger.info("Using OpenRouter")
+        return client, "openai/"
     except AuthenticationError as exc:
-        logger.warning("OpenAI auth failed (%s), falling back to OpenRouter", exc)
+        logger.warning("OpenRouter auth failed (%s), falling back to OpenAI", exc)
     except RateLimitError as exc:
-        logger.warning("OpenAI rate-limited/quota exceeded (%s), falling back to OpenRouter", exc)
+        logger.warning("OpenRouter rate-limited (%s), falling back to OpenAI", exc)
     except Exception as exc:
-        logger.warning("OpenAI unavailable (%s), falling back to OpenRouter", exc)
-    client = OpenAI(
-        api_key=_get_var("OPENROUTER_API_KEY"),
-        base_url=OPENROUTER_BASE_URL,
-    )
-    logger.info("Using OpenRouter as fallback")
-    return client, "openai/"
+        logger.warning("OpenRouter unavailable (%s), falling back to OpenAI", exc)
+    client = OpenAI(api_key=_get_var("OPENAI_API_KEY"))
+    logger.info("Using OpenAI as fallback")
+    return client, ""
 
 
 EMBEDDING_MODEL = "text-embedding-3-small"
