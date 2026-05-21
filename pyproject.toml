@@ -3,8 +3,9 @@ name = "url-rag"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13,<3.14"
 dependencies = [
+    "acidbase @ git+https://github.com/jurdabos/acidbase.git",
     "apache-airflow>=3.0.6",
     "beautifulsoup4>=4.14.3",
     "click>=8.3.1",
@@ -17,6 +18,14 @@ dependencies = [
 
 [project.scripts]
 url-rag = "url_rag.cli:main"
+
+[build-system]
+requires = ["hatchling>=1,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# Required for the `acidbase @ git+https://...` direct reference in dependencies.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/url_rag"]
