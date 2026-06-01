@@ -7,6 +7,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "acidbase @ git+https://github.com/jurdabos/acidbase.git",
     "apache-airflow>=3.0.6",
+    "apache-airflow-providers-smtp>=3.0.0",
     "beautifulsoup4>=4.14.3",
     "click>=8.3.1",
     "idna>=3.15",

@@ -70,10 +70,12 @@ apache-airflow-providers-common-sql==1.32.0 \
     --hash=sha256:631bd9bf7fcec817eeb8fd19804f194a9c61762e4f4b7ec41674c9da7e1021bd \
     --hash=sha256:d9386e12c8f057a3a4538b88acf0c4f5b56879ce7a6677154eef884cc5adcd15
     # via apache-airflow-core
-apache-airflow-providers-smtp==2.4.2 \
-    --hash=sha256:201d91efc6ae9c6a3eb6a12b395dbc047e0e2c7a8f8bb250ad17011c3fe0f6b8 \
-    --hash=sha256:ff234ead9ef55e5159c539be675b4c7624e252c5522b6d0bdc316349c964a38d
-    # via apache-airflow-core
+apache-airflow-providers-smtp==3.0.1 \
+    --hash=sha256:f34feaf9a988e21e0eec65ee594af02cbb0130386692b01cc0d3330d5c193002 \
+    --hash=sha256:f4519b99fbd636059dd69283704fe9cd38f8510d26d897ea4e340c33c3d12563
+    # via
+    #   apache-airflow-core
+    #   url-rag
 apache-airflow-providers-standard==1.12.0 \
     --hash=sha256:347a8d498054e8b9eb5b712a6bd2e0149214624104026ac6482dd2c24617401f \
     --hash=sha256:dbe07f356f25b27624cdfb8fe0430b6994038b7aae4a06d60754edc3f7823f9b
