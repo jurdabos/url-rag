@@ -30,3 +30,47 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/url_rag"]
+
+# --- Canonical a6a [tool.ruff] block (target adjusted to py313 for this repo) ---
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "__pycache__",
+    ".eggs",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Conservative starting selection that mirrors the legacy flake8 + isort
+# coverage. Broaden to ["E","W","F","I","B","UP","SIM","RUF"] per repo once
+# the existing code is clean (use `ruff check --fix` / `--unsafe-fixes` first).
+# E,W = pycodestyle       F = pyflakes (incl. F401/F541/F821)       I = isort
+select = ["E", "W", "F", "I"]
+# E203 conflicts with the ruff formatter; ruff itself doesn't emit W503 (that's flake8-only).
+ignore = ["E203"]
+
+[tool.ruff.lint.per-file-ignores]
+# Long string fixtures and import-only test stubs are acceptable.
+"tests/**/*.py" = ["E501", "F401"]
+"**/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# Pytest config (tests live under tests/, use unit/integration/e2e subdirs).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "plugins"]
+addopts = "-ra -q"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+]

@@ -1,6 +1,7 @@
 import ast
-from pathlib import Path
 import textwrap
+from pathlib import Path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORT_NAME = "function_report.txt"
 REPORT_PATH = PROJECT_ROOT / "scripts" / REPORT_NAME
@@ -25,9 +26,7 @@ for file in sorted(PROJECT_ROOT.rglob("*.py")):
     if any(p in file.parts for p in (".venv", ".idea")):
         continue
     if defs := list_defs(file):
-        report_lines += [str(file.relative_to(PROJECT_ROOT)),
-                         textwrap.indent("\n".join(defs), "    "),
-                         ""]
+        report_lines += [str(file.relative_to(PROJECT_ROOT)), textwrap.indent("\n".join(defs), "    "), ""]
 
 # ---- write fresh report --------------------------------------------
 REPORT_PATH.write_text("\n".join(report_lines), encoding="utf-8")

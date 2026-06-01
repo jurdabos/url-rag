@@ -10,6 +10,7 @@ Trigger this DAG manually and supply your question via the `query` parameter.
 `PINECONE_API_KEY`
 `PINECONE_INDEX_NAME`
 """
+
 import logging
 
 from airflow.models.param import Param
@@ -45,7 +46,8 @@ def _get_openai_client() -> tuple:
     Uses a minimal embedding call as the probe because models.list()
     is a free metadata endpoint that succeeds even when quota is exhausted.
     """
-    from openai import AuthenticationError, RateLimitError, OpenAI
+    from openai import AuthenticationError, OpenAI, RateLimitError
+
     try:
         client = OpenAI(
             api_key=_get_var("OPENROUTER_API_KEY"),
@@ -69,8 +71,9 @@ def _get_openai_client() -> tuple:
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
+
 @dag(
-    start_date=datetime(2026,3,3),
+    start_date=datetime(2026, 3, 3),
     schedule=None,
     catchup=False,
     doc_md=__doc__,
@@ -92,24 +95,19 @@ def rag_query():
         logger.info("Query: %s", query)
         client, prefix = _get_openai_client()
         model = f"{prefix}{EMBEDDING_MODEL}"
-        embedding = (
-            client.embeddings.create(input=[query], model=model)
-            .data[0]
-            .embedding
-        )
+        embedding = client.embeddings.create(input=[query], model=model).data[0].embedding
         logger.info("Query embedded (%d dimensions) via %s", len(embedding), model)
         return embedding
-    
+
     @task()
     def retrieve_context(query_embedding: list[float]) -> dict:
         """Retrieves most relevant chunks from Pinecone."""
         from pinecone import Pinecone
+
         pc = Pinecone(api_key=_get_var("PINECONE_API_KEY"))
         index_name = _get_var("PINECONE_INDEX_NAME", "rag-index")
         index = pc.Index(index_name)
-        search_results = index.query(
-            vector=query_embedding, top_k=5, include_metadata=True
-        )
+        search_results = index.query(vector=query_embedding, top_k=5, include_metadata=True)
         context_parts = []
         sources = []
         for match in search_results.matches:
@@ -123,7 +121,7 @@ def rag_query():
             "sources": sources,
             "chunks_retrieved": len(context_parts),
         }
-    
+
     @task()
     def generate_answer(retrieval: dict, **context) -> dict:
         """Generates an answer grounded in the retrieved context."""
@@ -143,9 +141,7 @@ def rag_query():
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Context:\n{retrieval['context']}\n\nQuestion: {query}"
-                    ),
+                    "content": (f"Context:\n{retrieval['context']}\n\nQuestion: {query}"),
                 },
             ],
             temperature=0.3,
@@ -164,5 +160,6 @@ def rag_query():
     embedding = embed_query()
     retrieved = retrieve_context(embedding)
     generate_answer(retrieved)
+
 
 rag_query()

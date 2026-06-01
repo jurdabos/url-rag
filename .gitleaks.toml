@@ -1,0 +1,24 @@
+# Canonical gitleaks config for the a6a ecosystem.
+# Extends the upstream default ruleset; add repo-specific allowlists below.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ecosystem-wide allowlist"
+# Paths that are safe by convention.
+paths = [
+    '''\.gitleaks\.toml$''',
+    '''(?i)^docs/.*\.md$''',
+    '''(?i)CHANGELOG\.md$''',
+    '''.*\.lock$''',
+]
+# Token placeholders we use in .env.example files.
+regexes = [
+    '''api_key_here''',
+    '''db_user''',
+    '''db_password''',
+    '''placeholder''',
+    '''example[_-]?token''',
+    '''\{\{[A-Z0-9_]+\}\}''',
+]

@@ -15,6 +15,7 @@ completion so downstream DAGs (like `rag_query`) know fresh data is available.
 `PINECONE_INDEX_NAME`
 URLs loaded from `include/urls.json` (git-ignored)
 """
+
 import json
 import logging
 from datetime import timedelta
@@ -51,7 +52,8 @@ def _get_openai_client() -> tuple:
     Uses a minimal embedding call as the probe because models.list()
     is a free metadata endpoint that succeeds even when quota is exhausted.
     """
-    from openai import AuthenticationError, RateLimitError, OpenAI
+    from openai import AuthenticationError, OpenAI, RateLimitError
+
     try:
         client = OpenAI(api_key=_get_var("OPENAI_API_KEY"))
         # Probing with a 1-token embedding; models.list() does NOT catch quota errors
@@ -71,6 +73,7 @@ def _get_openai_client() -> tuple:
     logger.info("Using OpenRouter as fallback")
     return client, "openai/"
 
+
 # Loading URL list from external file (git-ignored; may contain secrets in query strings).
 # Falls back to a minimal demo set if the file is missing.
 URLS_FILE = "/usr/local/airflow/include/urls.json"
@@ -83,18 +86,21 @@ def _load_default_urls() -> str:
     Falls back to a small demo list when the file is absent.
     """
     import os
+
     if os.path.exists(URLS_FILE):
         with open(URLS_FILE, "r", encoding="utf-8") as fh:
             urls = json.load(fh)
         logger.info("Loaded %d URLs from %s", len(urls), URLS_FILE)
         return json.dumps(urls)
     logger.warning("%s not found — using demo URL list", URLS_FILE)
-    return json.dumps([
-        "https://en.wikipedia.org/wiki/Tuvalu",
-        "https://en.wikipedia.org/wiki/Funafuti",
-        "https://es.wikipedia.org/wiki/La_novia_gitana_(novela)",
-        "https://www.casadellibro.com/regala-agendas-cuadernos",
-    ])
+    return json.dumps(
+        [
+            "https://en.wikipedia.org/wiki/Tuvalu",
+            "https://en.wikipedia.org/wiki/Funafuti",
+            "https://es.wikipedia.org/wiki/La_novia_gitana_(novela)",
+            "https://www.casadellibro.com/regala-agendas-cuadernos",
+        ]
+    )
 
 
 CHUNK_SIZE = 1000
@@ -107,37 +113,69 @@ CONTENT_HASHES_VAR = "rag_content_hashes"
 
 # URL patterns that won't yield useful scrapeable text
 SKIP_EXTENSIONS = (
-    ".pdf", ".jpg", ".jpeg", ".png", ".svg", ".ico", ".gif",
-    ".mp3", ".mp4", ".wav", ".zip", ".gz", ".tar",
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".svg",
+    ".ico",
+    ".gif",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".zip",
+    ".gz",
+    ".tar",
 )
 SKIP_DOMAINS = (
     "localhost",
-    "youtube.com", "music.youtube.com", "youtu.be",
-    "instagram.com", "facebook.com", "web.whatsapp.com",
-    "drive.google.com", "docs.google.com", "keep.google.com",
-    "mail.google.com", "calendar.google.com",
-    "classroom.google.com", "myactivity.google.com",
+    "youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "instagram.com",
+    "facebook.com",
+    "web.whatsapp.com",
+    "drive.google.com",
+    "docs.google.com",
+    "keep.google.com",
+    "mail.google.com",
+    "calendar.google.com",
+    "classroom.google.com",
+    "myactivity.google.com",
     "console.cloud.google.com",
     "maps.google.com",
-    "open.spotify.com", "listen.tidal.com",
+    "open.spotify.com",
+    "listen.tidal.com",
     "soundcloud.com",
-    "app.prefect.cloud", "app.docusign.com",
-    "portal.azure.com", "signin.aws.amazon.com",
-    "onedrive.live.com", "eunorg-my.sharepoint.com",
+    "app.prefect.cloud",
+    "app.docusign.com",
+    "portal.azure.com",
+    "signin.aws.amazon.com",
+    "onedrive.live.com",
+    "eunorg-my.sharepoint.com",
     "dbc-fd72a54d-4556.cloud.databricks.com",
-    "gemini.google.com", "claude.ai", "chat.openai.com",
+    "gemini.google.com",
+    "claude.ai",
+    "chat.openai.com",
     "account.jetbrains.com",
 )
 SKIP_PATH_KEYWORDS = (
-    "/login", "/signin", "/signup", "/register",
-    "/profile", "/account", "/dashboard",
-    "/my-collection", "/inbox",
+    "/login",
+    "/signin",
+    "/signup",
+    "/register",
+    "/profile",
+    "/account",
+    "/dashboard",
+    "/my-collection",
+    "/inbox",
 )
 
 rag_index = Asset("rag_index")
 
+
 @dag(
-    start_date=datetime(2026,3,3),
+    start_date=datetime(2026, 3, 3),
     schedule=timedelta(days=14),
     catchup=False,
     doc_md=__doc__,
@@ -154,16 +192,19 @@ def rag_ingest():
         to disk.  Returns paths to the documents file and CDC manifest.
         """
         import os
-        import requests
-        from bs4 import BeautifulSoup
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from urllib.parse import urlparse
+
+        import requests
+        from bs4 import BeautifulSoup
+
         os.makedirs(DATA_DIR, exist_ok=True)
         urls = json.loads(_get_var("rag_source_urls", _load_default_urls()))
         max_urls = int(_get_var("rag_max_urls", "0"))
         if max_urls > 0:
             logger.info("Limiting to first %d URLs (of %d total)", max_urls, len(urls))
             urls = urls[:max_urls]
+
         def _should_skip(url: str) -> str | None:
             """Returns a reason string if the URL should be skipped, else None."""
             lower = url.lower()
@@ -182,6 +223,7 @@ def rag_ingest():
             if "google.com/maps" in lower:
                 return "Google Maps URL"
             return None
+
         # Pre-filtering
         filtered_urls = []
         pre_skipped = 0
@@ -194,8 +236,11 @@ def rag_ingest():
                 filtered_urls.append(url)
         logger.info(
             "Pre-filter: %d URLs kept, %d skipped (of %d total)",
-            len(filtered_urls), pre_skipped, len(urls),
+            len(filtered_urls),
+            pre_skipped,
+            len(urls),
         )
+
         def _fetch_one(url: str) -> dict | None:
             """Fetches a single URL. Returns doc dict or None on failure."""
             try:
@@ -211,7 +256,9 @@ def rag_ingest():
                 if len(text) > MAX_CONTENT_CHARS:
                     logger.info(
                         "Truncating %s from %d to %d chars",
-                        url, len(text), MAX_CONTENT_CHARS,
+                        url,
+                        len(text),
+                        MAX_CONTENT_CHARS,
                     )
                     text = text[:MAX_CONTENT_CHARS]
                 return {
@@ -222,6 +269,7 @@ def rag_ingest():
             except Exception as exc:
                 logger.warning("Skipping %s: %s", url, str(exc)[:200])
                 return None
+
         documents = []
         fetch_skipped = 0
         max_workers = int(_get_var("rag_fetch_workers", "10"))
@@ -237,10 +285,14 @@ def rag_ingest():
         total_chars = sum(len(d["content"]) for d in documents)
         logger.info(
             "Fetched %d docs (%d chars total), skipped %d (pre-filter) + %d (fetch errors)",
-            len(documents), total_chars, pre_skipped, fetch_skipped,
+            len(documents),
+            total_chars,
+            pre_skipped,
+            fetch_skipped,
         )
         # --- CDC: content hashing and change detection ---
         import hashlib
+
         current_hashes = {}
         for doc in documents:
             doc["content_hash"] = hashlib.sha256(doc["content"].encode()).hexdigest()
@@ -263,14 +315,13 @@ def rag_ingest():
         current_url_set = set(filtered_urls)
         removed_urls = [u for u in previous_hashes if u not in current_url_set]
         # Building new hash map: preserving hashes for fetch-failed URLs still in list
-        all_hashes = {
-            u: h for u, h in previous_hashes.items()
-            if u in current_url_set and u not in current_hashes
-        }
+        all_hashes = {u: h for u, h in previous_hashes.items() if u in current_url_set and u not in current_hashes}
         all_hashes.update(current_hashes)
         logger.info(
             "CDC: %d changed, %d unchanged, %d removed, %d failed (hash preserved)",
-            len(changed_docs), unchanged_count, len(removed_urls),
+            len(changed_docs),
+            unchanged_count,
+            len(removed_urls),
             len(all_hashes) - len(current_hashes),
         )
         # Writing only changed docs to disk
@@ -280,11 +331,15 @@ def rag_ingest():
         # Writing CDC manifest for downstream tasks
         manifest_path = f"{DATA_DIR}/cdc_manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as fh:
-            json.dump({
-                "changed_urls": [d["url"] for d in changed_docs],
-                "removed_urls": removed_urls,
-                "all_hashes": all_hashes,
-            }, fh, ensure_ascii=False)
+            json.dump(
+                {
+                    "changed_urls": [d["url"] for d in changed_docs],
+                    "removed_urls": removed_urls,
+                    "all_hashes": all_hashes,
+                },
+                fh,
+                ensure_ascii=False,
+            )
         logger.info("Wrote %d changed documents to %s", len(changed_docs), docs_path)
         return {"docs_path": docs_path, "manifest_path": manifest_path}
 
@@ -342,6 +397,7 @@ def rag_ingest():
         Uses smaller batches for OpenRouter and retries on transient errors.
         """
         import time
+
         with open(chunks_path, "r", encoding="utf-8") as fh:
             chunks = json.load(fh)
         if not chunks:
@@ -364,7 +420,10 @@ def rag_ingest():
             batch_num = i // batch_size + 1
             logger.info(
                 "Embedding batch %d/%d (%d chunks) via %s",
-                batch_num, total_batches, len(texts), model,
+                batch_num,
+                total_batches,
+                len(texts),
+                model,
             )
             # Retrying on transient failures (empty responses, timeouts)
             response = None
@@ -375,22 +434,28 @@ def rag_ingest():
                         raise ValueError(f"Empty embedding response for batch {batch_num}")
                     if len(response.data) != len(texts):
                         raise ValueError(
-                            f"Batch {batch_num}: expected {len(texts)} embeddings, "
-                            f"got {len(response.data)}"
+                            f"Batch {batch_num}: expected {len(texts)} embeddings, got {len(response.data)}"
                         )
                     break
                 except Exception as exc:
                     if attempt < max_retries:
-                        wait = 2 ** attempt
+                        wait = 2**attempt
                         logger.warning(
                             "Batch %d attempt %d/%d failed (%s), retrying in %ds",
-                            batch_num, attempt, max_retries, exc, wait,
+                            batch_num,
+                            attempt,
+                            max_retries,
+                            exc,
+                            wait,
                         )
                         time.sleep(wait)
                     else:
                         logger.error(
                             "Batch %d failed after %d attempts (%s), skipping %d chunks",
-                            batch_num, max_retries, exc, len(batch),
+                            batch_num,
+                            max_retries,
+                            exc,
+                            len(batch),
                         )
                         response = None
             if response and response.data:
@@ -399,7 +464,9 @@ def rag_ingest():
         skipped = len(chunks) - len(embedded_chunks)
         logger.info(
             "Generated embeddings for %d/%d chunks (%d skipped)",
-            len(embedded_chunks), len(chunks), skipped,
+            len(embedded_chunks),
+            len(chunks),
+            skipped,
         )
         out_path = f"{DATA_DIR}/embedded_chunks.json"
         with open(out_path, "w", encoding="utf-8") as fh:
@@ -415,8 +482,10 @@ def rag_ingest():
         content-hash manifest to an Airflow Variable on success.
         """
         import time
+
         import ijson
         from pinecone import Pinecone, ServerlessSpec
+
         pc = Pinecone(api_key=_get_var("PINECONE_API_KEY"))
         index_name = _get_var("PINECONE_INDEX_NAME", "rag-index")
         existing_indexes = [idx.name for idx in pc.list_indexes()]
@@ -426,7 +495,9 @@ def rag_ingest():
             if desc.dimension != EMBEDDING_DIMENSION:
                 logger.warning(
                     "Index %s has dimension %d, expected %d — deleting and recreating",
-                    index_name, desc.dimension, EMBEDDING_DIMENSION,
+                    index_name,
+                    desc.dimension,
+                    EMBEDDING_DIMENSION,
                 )
                 pc.delete_index(index_name)
                 existing_indexes.remove(index_name)
@@ -474,6 +545,7 @@ def rag_ingest():
         total_skipped = 0
         batch_num = 0
         batch: list[dict] = []
+
         def _flush(vectors: list[dict], bnum: int) -> int:
             """Upserts a batch with retries. Returns count upserted (0 on failure)."""
             for attempt in range(1, max_retries + 1):
@@ -482,18 +554,26 @@ def rag_ingest():
                     return len(vectors)
                 except Exception as exc:
                     if attempt < max_retries:
-                        wait = 2 ** attempt
+                        wait = 2**attempt
                         logger.warning(
                             "Upsert batch %d attempt %d/%d failed (%s), retrying in %ds",
-                            bnum, attempt, max_retries, exc, wait,
+                            bnum,
+                            attempt,
+                            max_retries,
+                            exc,
+                            wait,
                         )
                         time.sleep(wait)
                     else:
                         logger.error(
                             "Upsert batch %d failed after %d attempts (%s), skipping %d vectors",
-                            bnum, max_retries, exc, len(vectors),
+                            bnum,
+                            max_retries,
+                            exc,
+                            len(vectors),
                         )
                         return 0
+
         # Streaming JSON array items one by one to keep memory flat
         with open(embedded_path, "rb") as fh:
             for chunk in ijson.items(fh, "item"):
@@ -502,11 +582,13 @@ def rag_ingest():
                     text = text[:max_meta_text]
                 meta = {**chunk.get("metadata", {}), "text": text}
                 # ijson parses numbers as Decimal; Pinecone needs native floats
-                batch.append({
-                    "id": chunk["id"],
-                    "values": [float(v) for v in chunk["embedding"]],
-                    "metadata": meta,
-                })
+                batch.append(
+                    {
+                        "id": chunk["id"],
+                        "values": [float(v) for v in chunk["embedding"]],
+                        "metadata": meta,
+                    }
+                )
                 if len(batch) >= batch_size:
                     batch_num += 1
                     upserted = _flush(batch, batch_num)
@@ -541,5 +623,6 @@ def rag_ingest():
     chunks_path = chunk_documents(fetch_result["docs_path"])
     embedded_path = generate_embeddings(chunks_path)
     upsert_to_pinecone(embedded_path, fetch_result["manifest_path"])
+
 
 rag_ingest()

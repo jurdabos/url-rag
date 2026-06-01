@@ -5,10 +5,10 @@ Provides the ``push`` subcommand (shared from :mod:`acidbase.push`) and
 the project-specific ``query`` subcommand that asks a question against
 the RAG knowledge base.
 """
+
 from __future__ import annotations
 
 import click
-
 from acidbase.push import push_command
 
 
