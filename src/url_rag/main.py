@@ -1,1 +1,2 @@
-def main(): print('hello, url-rag')
+def main():
+    print("hello, url-rag")

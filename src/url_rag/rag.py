@@ -4,6 +4,7 @@ Core RAG query pipeline — embed, retrieve, generate.
 Loads API keys from environment variables (via .env) so the same
 logic can be used from the CLI without Airflow.
 """
+
 import logging
 import os
 
@@ -33,6 +34,7 @@ def _get_openai_client() -> tuple:
     on authentication or rate-limit errors.
     """
     from openai import AuthenticationError, OpenAI, RateLimitError
+
     try:
         client = OpenAI(
             api_key=_get_env("OPENROUTER_API_KEY"),
@@ -55,11 +57,7 @@ def embed_query(query: str) -> list[float]:
     """Embeds a query string and returns the vector."""
     client, prefix = _get_openai_client()
     model = f"{prefix}{EMBEDDING_MODEL}"
-    embedding = (
-        client.embeddings.create(input=[query], model=model)
-        .data[0]
-        .embedding
-    )
+    embedding = client.embeddings.create(input=[query], model=model).data[0].embedding
     logger.info("Query embedded (%d dimensions) via %s", len(embedding), model)
     return embedding
 
@@ -67,12 +65,11 @@ def embed_query(query: str) -> list[float]:
 def retrieve_context(query_embedding: list[float], top_k: int = 5) -> dict:
     """Retrieves the most relevant chunks from Pinecone."""
     from pinecone import Pinecone
+
     pc = Pinecone(api_key=_get_env("PINECONE_API_KEY"))
     index_name = _get_env("PINECONE_INDEX_NAME", "rag-index")
     index = pc.Index(index_name)
-    search_results = index.query(
-        vector=query_embedding, top_k=top_k, include_metadata=True
-    )
+    search_results = index.query(vector=query_embedding, top_k=top_k, include_metadata=True)
     context_parts = []
     sources = []
     for match in search_results.matches:

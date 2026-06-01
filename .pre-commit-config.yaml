@@ -1,15 +1,26 @@
+# Canonical pre-commit config for the a6a ecosystem.
+# Bump revs with: pre-commit autoupdate
+#
+# NOTE: uv-export is NOT used here because requirements.txt lists only
+# direct deps for the Astronomer Docker image (which resolves transitive
+# deps itself). Keep requirements.txt in sync with pyproject.toml manually.
 repos:
-  # fast uv-powered helpers maintained by Astral
+  # Keep uv.lock in sync with pyproject.toml
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.8.15
     hooks:
-      - id: uv-lock           # keep uv.lock fresh
-      # NOTE: uv-export is NOT used here because requirements.txt lists only
-      # direct deps for the Astronomer Docker image (which resolves transitive
-      # deps itself). Keep requirements.txt in sync with pyproject.toml manually.
+      - id: uv-lock
 
-  # gitleaks hook (native binary)
+  # Single unified linter + formatter (replaces black + isort + flake8)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Secret scanning (MIT CLI, no license gate)
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2              # a known tag; then run `pre-commit autoupdate` to bump
+    rev: v8.30.1
     hooks:
       - id: gitleaks
