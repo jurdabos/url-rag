@@ -3,7 +3,12 @@ name = "url-rag"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+# Lowered upper-bound floor from 3.13 to 3.12 so the Astronomer Runtime
+# base image (astrocrpublic.azurecr.io/runtime:3.0-14, which ships
+# Python 3.12.12) can build the image. acidbase>=0.1.1 also widened to
+# >=3.12; without that two-side change uv's solver could not satisfy
+# acidbase under 3.12 and the ONBUILD install-python-dependencies failed.
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "acidbase @ git+https://github.com/jurdabos/acidbase.git",
     "apache-airflow>=3.0.6",
@@ -37,7 +42,8 @@ packages = ["src/url_rag"]
 # --- Canonical a6a [tool.ruff] block (target adjusted to py313 for this repo) ---
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+# Target the lowest supported Python (matches Astro Runtime 3.12.12).
+target-version = "py312"
 extend-exclude = [
     ".venv",
     "build",
