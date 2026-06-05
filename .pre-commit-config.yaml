@@ -3,7 +3,10 @@
 #
 # NOTE: uv-export is NOT used here because requirements.txt lists only
 # direct deps for the Astronomer Docker image (which resolves transitive
-# deps itself). Keep requirements.txt in sync with pyproject.toml manually.
+# deps itself). The local `sync-requirements` hook below keeps
+# requirements.txt in sync with pyproject.toml automatically and filters
+# out the apache-airflow core packages that the Astro Runtime base image
+# already provides.
 repos:
   # Keep uv.lock in sync with pyproject.toml
   - repo: https://github.com/astral-sh/uv-pre-commit
@@ -24,3 +27,16 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+
+  # Local hook: regenerate requirements.txt from pyproject.toml so the
+  # Astronomer Runtime base image's ONBUILD `install-python-dependencies`
+  # never sees a forbidden `apache-airflow` line. See script docstring
+  # at scripts/sync_requirements.py for the full rationale.
+  - repo: local
+    hooks:
+      - id: sync-requirements
+        name: sync requirements.txt from pyproject.toml (Astro Docker)
+        entry: python scripts/sync_requirements.py
+        language: python
+        pass_filenames: false
+        files: ^(pyproject\.toml|scripts/sync_requirements\.py|requirements\.txt)$
