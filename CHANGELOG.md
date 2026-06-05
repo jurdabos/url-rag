@@ -4,6 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 ### Fixed
+- **Docker image build (`astro dev start`) no longer fails on `Git executable not found`.** The Astronomer Runtime base image does not ship `git`, but uv needs it inside the container to clone the `acidbase` `git+https://...` dependency declared in `requirements.txt`. Added `git` to `packages.txt` so the runtime's ONBUILD `install-system-packages` step `apt`-installs it **before** `install-python-dependencies` runs. Dockerfile comment updated to document the dependency.
 - **Docker image build (`astro dev start`) no longer fails on `acidbase==0.1.0 depends on Python>=3.13`.** The Astronomer Runtime base image ships Python 3.12.12, but `acidbase` declared `requires-python = ">=3.13"` (an oversight — the source already targets `py312` for ruff and uses no 3.13-only features) and `url-rag` itself declared `requires-python = ">=3.13,<3.14"`. Fixed at both ends:
   - `acidbase` v0.1.1 now declares `requires-python = ">=3.12"`; uv.lock is updated to pin the new public-mirror commit (`3685c654`).
   - `url-rag` lowered to `requires-python = ">=3.12,<3.14"` and `[tool.ruff].target-version = "py312"`.

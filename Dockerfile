@@ -15,7 +15,12 @@ FROM astrocrpublic.azurecr.io/runtime:3.0-14
 # behaviour. They are idempotent: pip installs from the same
 # requirements.txt the ONBUILD step already used, so reruns are no-ops.
 
-# Installing OS-level (apt) packages; packages.txt may be empty
+# Installing OS-level (apt) packages from packages.txt.
+# `git` is required at image-build time so the ONBUILD
+# `install-python-dependencies` step (uv-based) can clone the `acidbase`
+# git+https dependency. The Astro Runtime base image does not ship git
+# by default; without this entry uv fails with
+#   "Git executable not found. Ensure that Git is installed and available."
 COPY packages.txt .
 RUN if [ -s packages.txt ]; then \
         apt-get update && \
