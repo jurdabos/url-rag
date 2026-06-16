@@ -18,7 +18,7 @@ wheels = [
 [[package]]
 name = "acidbase"
 version = "0.1.1"
-source = { git = "https://github.com/jurdabos/acidbase.git#3685c654aec0be46af21c27fc959bc09808d5242" }
+source = { git = "https://github.com/jurdabos/acidbase.git#c3bc109abc97c38c75ddd44c4fbb68fdee18ebfe" }
 dependencies = [
     { name = "click" },
     { name = "packaging" },
