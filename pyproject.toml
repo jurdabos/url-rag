@@ -11,6 +11,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "acidbase @ git+https://github.com/jurdabos/acidbase.git",
+    "aiosmtplib>=5.1.1",
     "apache-airflow>=3.2.0",
     "apache-airflow-providers-smtp>=3.0.0",
     "beautifulsoup4>=4.14.3",

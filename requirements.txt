@@ -13,6 +13,7 @@
 # and run:    python scripts/sync_requirements.py
 # (the pre-commit hook does this automatically on each commit).
 acidbase @ git+https://github.com/jurdabos/acidbase.git
+aiosmtplib>=5.1.1
 apache-airflow-providers-smtp>=3.0.0
 beautifulsoup4>=4.14.3
 click>=8.3.1
