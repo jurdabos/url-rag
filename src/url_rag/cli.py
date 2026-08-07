@@ -9,10 +9,11 @@ the RAG knowledge base.
 from __future__ import annotations
 
 import click
+from acidbase.cli_utils import group
 from acidbase.push import push_command
 
 
-@click.group()
+@group()
 def cli() -> None:
     """CLI tools for the url-rag project."""
 
