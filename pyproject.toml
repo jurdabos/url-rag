@@ -1,6 +1,6 @@
 [project]
 name = "url-rag"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 # Lowered upper-bound floor from 3.13 to 3.12 so the Astronomer Runtime
