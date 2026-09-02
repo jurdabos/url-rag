@@ -11,6 +11,7 @@ from __future__ import annotations
 import click
 from acidbase.cli_utils import group
 from acidbase.push import push_command
+from acidbase.versioning import bump_command
 
 
 @group()
@@ -18,6 +19,7 @@ def cli() -> None:
     """CLI tools for the url-rag project."""
 
 
+cli.add_command(bump_command)
 cli.add_command(push_command)
 
 
