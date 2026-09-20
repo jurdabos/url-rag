@@ -1,37 +1,58 @@
 # Canonical pre-commit config for the a6a ecosystem.
-# Bump revs with: pre-commit autoupdate
 #
-# NOTE: uv-export is NOT used here because requirements.txt lists only
-# direct deps for the Astronomer Docker image (which resolves transitive
-# deps itself). The local `sync-requirements` hook below keeps
-# requirements.txt in sync with pyproject.toml automatically and filters
-# out the apache-airflow core packages that the Astro Runtime base image
-# already provides.
+# Every hook is `repo: local` / `language: system`, so this file pins no tool
+# version of its own. Each version has exactly one owner elsewhere:
+#   - uv:       the `uv` on PATH.
+#   - ruff:     whatever uv.lock resolves. `uv run --frozen python -m ruff` is
+#               the same binary CI runs via `uv run ruff` in
+#               .github/workflows/lint.yml, so the hook and CI cannot disagree.
+#               (`python -m ruff` rather than bare `ruff` so a repo that forgot
+#               to lock ruff fails loudly instead of falling back to a PATH ruff.)
+#   - gitleaks: the system binary, pinned in CI by GITLEAKS_VERSION.
+#
+# Bump ruff with `uv lock --upgrade-package ruff`, never by editing this file.
+# `uv run acidbase hooks` reports repos that still carry a drifting remote pin.
 repos:
-  # Keep uv.lock in sync with pyproject.toml
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.15
+  - repo: local
     hooks:
+      # Keep uv.lock in sync with pyproject.toml.
       - id: uv-lock
+        name: uv lock
+        entry: uv lock
+        language: system
+        files: ^(uv\.lock|pyproject\.toml|uv\.toml)$
+        pass_filenames: false
 
-  # Single unified linter + formatter (replaces black + isort + flake8)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.0
-    hooks:
+      # Single unified linter + formatter (replaces black + isort + flake8).
+      # ruff must be in [dependency-groups].dev so uv.lock resolves it.
       - id: ruff
-        args: [--fix]
+        name: ruff check (version from uv.lock)
+        entry: uv run --frozen python -m ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
       - id: ruff-format
+        name: ruff format (version from uv.lock)
+        entry: uv run --frozen python -m ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
 
-  # Secret scanning (MIT CLI, no license gate)
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
-    hooks:
+      # Secret scanning via the MIT-licensed `gitleaks` CLI on PATH, not the
+      # upstream pre-commit hook (which is `language: golang` and `go install`s
+      # from source on every fresh clone). Install once:
+      # `winget install -e --id Gitleaks.Gitleaks` (Windows) or
+      # `brew install gitleaks` / distro package on POSIX.
+      # `git --pre-commit --staged` is the gitleaks 8.30+ incantation; it scans
+      # only the staged diff, not the whole history (CI does that).
       - id: gitleaks
+        name: gitleaks (system binary, staged-only)
+        entry: gitleaks
+        args: ["git", "--pre-commit", "--staged", "--config", ".gitleaks.toml", "--redact", "--no-banner", "."]
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
 
-  # Local hook: regenerate requirements.txt from pyproject.toml so the
-  # Astronomer Runtime base image's ONBUILD `install-python-dependencies`
-  # never sees a forbidden `apache-airflow` line. See script docstring
-  # at scripts/sync_requirements.py for the full rationale.
   - repo: local
     hooks:
       - id: sync-requirements
