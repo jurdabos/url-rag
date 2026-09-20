@@ -33,6 +33,11 @@ jobs:
       - name: Sync dev dependencies
         run: uv sync --frozen --extra dev || uv sync --frozen
 
+      # uv.lock is the single source of truth for the ruff version; fail if
+      # .pre-commit-config.yaml reintroduces a remote ruff pin that drifts.
+      - name: ruff hook agrees with uv.lock
+        run: uv run acidbase hooks .
+
       - name: ruff check
         run: uv run ruff check .
 
