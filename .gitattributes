@@ -1,15 +1,28 @@
 * text=auto
 
-# Common LF-only files
-*.sh text eol=lf
-uv.lock text eol=lf
-
-# Windows-only things can be CRLF
-*.ps1  text eol=crlf
-*.bat  text eol=crlf
-
 # Binary files
 *.png binary
 *.jpg binary
 *.pdf binary
 *.jar binary
+
+# Configs and CI manifests LF-only (to avoid ruff format / yamllint churn)
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Lockfiles LF-only
+uv.lock text eol=lf
+
+# Python sources LF-only so `ruff format` stays a no-op across Windows/WSL (Markdown as well because of ruff >= 0.16 formatting code blocks)
+*.md text eol=lf
+*.py text eol=lf
+*.pyi text eol=lf
+
+# Shell scripts LF-only to reduce friction
+*.ps1 text eol=lf
+*.sh text eol=lf
+
+# Windows-only things to CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
