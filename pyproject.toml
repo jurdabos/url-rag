@@ -16,6 +16,7 @@ dependencies = [
     "apache-airflow>=3.3.0",
     "apache-airflow-providers-smtp>=3.0.0",
     "beautifulsoup4>=4.14.3",
+    "certifi>=2026.10.18",
     "click>=8.3.1",
     "cryptography>=50.0.0",
     "idna>=3.15",
