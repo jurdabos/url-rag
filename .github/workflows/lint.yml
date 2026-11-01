@@ -27,11 +27,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Set up Python from .python-version / pyproject
-        run: uv python install
+      # A committed .python-version is required: without it `uv python install`
+      # picks the newest CPython that requires-python allows, so CI silently
+      # moves to a release that dependencies may not support yet.
+      - name: Set up Python from the committed .python-version
+        run: |
+          if [ ! -f .python-version ]; then
+            echo "::error file=.python-version::Commit a .python-version (e.g. 3.12) so CI tests a deliberately chosen Python."
+            exit 1
+          fi
+          uv python install
 
+      # `uv sync` includes the `dev` dependency group by default when it exists
+      # and does not fail in repos that keep ruff elsewhere.
       - name: Sync dev dependencies
-        run: uv sync --frozen --extra dev || uv sync --frozen
+        run: uv sync --frozen
 
       # uv.lock is the single source of truth for the ruff version; fail if
       # .pre-commit-config.yaml reintroduces a remote ruff pin that drifts.
