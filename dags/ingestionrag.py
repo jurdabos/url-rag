@@ -13,7 +13,8 @@ completion so downstream DAGs (like `rag_query`) know fresh data is available.
 `OPENAI_API_KEY`
 `PINECONE_API_KEY`
 `PINECONE_INDEX_NAME`
-URLs loaded from `include/urls.json` (git-ignored)
+URLs loaded from `include/urls.json` (git-ignored) and cleaned at load by
+`include/url_filter.py`, so fetches, logs and Pinecone only see cleaned URLs.
 """
 
 import json
@@ -22,6 +23,8 @@ from datetime import timedelta
 
 from airflow.sdk import Asset, Variable, dag, task
 from pendulum import datetime
+
+from include.url_filter import clean_urls, should_skip_url
 
 logger = logging.getLogger(__name__)
 
@@ -111,66 +114,6 @@ MAX_CONTENT_CHARS = 5_000_000
 DATA_DIR = "/tmp/rag_pipeline"
 CONTENT_HASHES_VAR = "rag_content_hashes"
 
-# URL patterns that won't yield useful scrapeable text
-SKIP_EXTENSIONS = (
-    ".pdf",
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".svg",
-    ".ico",
-    ".gif",
-    ".mp3",
-    ".mp4",
-    ".wav",
-    ".zip",
-    ".gz",
-    ".tar",
-)
-SKIP_DOMAINS = (
-    "localhost",
-    "youtube.com",
-    "music.youtube.com",
-    "youtu.be",
-    "instagram.com",
-    "facebook.com",
-    "web.whatsapp.com",
-    "drive.google.com",
-    "docs.google.com",
-    "keep.google.com",
-    "mail.google.com",
-    "calendar.google.com",
-    "classroom.google.com",
-    "myactivity.google.com",
-    "console.cloud.google.com",
-    "maps.google.com",
-    "open.spotify.com",
-    "listen.tidal.com",
-    "soundcloud.com",
-    "app.prefect.cloud",
-    "app.docusign.com",
-    "portal.azure.com",
-    "signin.aws.amazon.com",
-    "onedrive.live.com",
-    "sharepoint.com",
-    "cloud.databricks.com",
-    "gemini.google.com",
-    "claude.ai",
-    "chat.openai.com",
-    "account.jetbrains.com",
-)
-SKIP_PATH_KEYWORDS = (
-    "/login",
-    "/signin",
-    "/signup",
-    "/register",
-    "/profile",
-    "/account",
-    "/dashboard",
-    "/my-collection",
-    "/inbox",
-)
-
 rag_index = Asset("rag_index")
 
 
@@ -193,42 +136,22 @@ def rag_ingest():
         """
         import os
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from urllib.parse import urlparse
 
         import requests
         from bs4 import BeautifulSoup
 
         os.makedirs(DATA_DIR, exist_ok=True)
-        urls = json.loads(_get_var("rag_source_urls", _load_default_urls()))
+        urls = clean_urls(json.loads(_get_var("rag_source_urls", _load_default_urls())))
         max_urls = int(_get_var("rag_max_urls", "0"))
         if max_urls > 0:
             logger.info("Limiting to first %d URLs (of %d total)", max_urls, len(urls))
             urls = urls[:max_urls]
 
-        def _should_skip(url: str) -> str | None:
-            """Returns a reason string if the URL should be skipped, else None."""
-            lower = url.lower()
-            if any(lower.endswith(ext) for ext in SKIP_EXTENSIONS):
-                return f"file extension ({lower.rsplit('.', 1)[-1]})"
-            parsed = urlparse(url)
-            hostname = (parsed.hostname or "").lower()
-            if any(hostname == d or hostname.endswith(f".{d}") for d in SKIP_DOMAINS):
-                return f"skipped domain ({hostname})"
-            if hostname.startswith("localhost") or hostname.startswith("127."):
-                return "localhost"
-            path_lower = parsed.path.lower()
-            if any(kw in path_lower for kw in SKIP_PATH_KEYWORDS):
-                return f"auth/profile path ({path_lower})"
-            # Skipping Google Maps place/dir URLs (huge, no useful text)
-            if "google.com/maps" in lower:
-                return "Google Maps URL"
-            return None
-
         # Pre-filtering
         filtered_urls = []
         pre_skipped = 0
         for url in urls:
-            reason = _should_skip(url)
+            reason = should_skip_url(url)
             if reason:
                 logger.debug("Pre-filter skip %s: %s", url, reason)
                 pre_skipped += 1

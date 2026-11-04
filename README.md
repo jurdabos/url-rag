@@ -50,7 +50,14 @@ uv run url-rag query "What is your real question?"
 - `OPENAI_API_KEY`
 - `PINECONE_API_KEY`
 - `PINECONE_INDEX_NAME` (defaults to `rag-index`)
-- `rag_source_urls` (optional JSON list; defaults are baked into the DAG)
+- `rag_source_urls` (optional JSON list; overrides `include/urls.json`)
+
+## URL handling
+
+The URL list stays out of Git and out of the image: `.gitignore` and `.dockerignore` both exclude `include/urls.json`,
+and `include/urls.json.example` shows the format. `include/url_filter.py` cleans every URL at load, whichever source it
+came from. Userinfo, fragments and all query parameters outside `DEFAULT_KEEP_PARAMS` are dropped, so fetches, logs and
+Pinecone only see the cleaned URL. Extend the allowlist if a page needs a parameter to select its content.
 
 ## Project structure
 
@@ -63,10 +70,11 @@ url-rag/
 │   └── url_helpers_plugin.py  # Registers url_rag.* Jinja macros
 ├── src/url_rag/
 │   ├── cli.py                 # Click CLI (`url-rag query`)
-│   ├── rag.py                 # Library-mode RAG pipeline (used by CLI)
-│   └── url_filter.py          # Pure URL-skip + content-hash helpers
+│   └── rag.py                 # Library-mode RAG pipeline (used by CLI)
 ├── tests/unit/                # pytest unit tests
-├── include/                   # Shared SQL / config / URL list (urls.json is gitignored)
+├── include/
+│   ├── url_filter.py          # Pure URL-cleaning, skip and content-hash helpers
+│   └── urls.json.example      # Format of the gitignored URL list
 ├── .github/workflows/lint.yml # ruff + gitleaks CI
 ├── .gitleaks.toml
 ├── .pre-commit-config.yaml

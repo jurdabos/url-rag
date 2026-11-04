@@ -87,7 +87,7 @@ line-ending = "lf"
 # Pytest config (tests live under tests/, use unit/integration/e2e subdirs).
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "plugins"]
+pythonpath = [".", "src", "plugins"]
 addopts = "-ra -q"
 
 [dependency-groups]
