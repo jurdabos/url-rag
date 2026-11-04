@@ -17,3 +17,4 @@ uv.lock
 pyproject.toml
 main.py
 README.md
+include/urls.json
