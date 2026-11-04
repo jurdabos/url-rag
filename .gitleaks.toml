@@ -6,11 +6,10 @@ useDefault = true
 
 [allowlist]
 description = "Ecosystem-wide allowlist"
-# Paths that are safe by convention.
+# Paths that are safe by convention. Docs and changelogs stay scanned, because that is where a
+# pasted credential tends to land; a false positive goes in .gitleaksignore by full fingerprint.
 paths = [
     '''\.gitleaks\.toml$''',
-    '''(?i)^docs/.*\.md$''',
-    '''(?i)CHANGELOG\.md$''',
     '''.*\.lock$''',
 ]
 # Token placeholders we use in .env.example files.

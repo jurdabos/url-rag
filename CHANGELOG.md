@@ -4,6 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 ### Changed
+- `.github/workflows/lint.yml`, `.gitleaks.toml`: the gitleaks job checks its download against a pinned SHA-256 and runs `gitleaks git`, because `detect` is deprecated. Docs and changelogs are scanned now; false positives go in `.gitleaksignore`.
 - Adopted the canonical non-truncating CLI help from acidbase: the top-level command group is now built with `acidbase.cli_utils.group` (a `click.Group` subclass) instead of `click.group`. Click's default group listing truncates each command's short help at 45 characters, so longer descriptions ended in `...`; the shared group wraps the full first paragraph onto aligned continuation lines instead. `RichGroup.main` also routes output through `ensure_unicode_safe_streams()`, so non-ASCII help (em dashes, accented words) survives on Windows consoles using a legacy code page. `uv.lock` pins acidbase at the commit providing `cli_utils`.
 ### Fixed
 - `.python-version` (3.13), `.gitignore`, `.github/workflows/lint.yml`: CI now runs on a deliberately
