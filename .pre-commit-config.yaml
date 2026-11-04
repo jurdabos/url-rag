@@ -12,6 +12,8 @@
 #
 # Bump ruff with `uv lock --upgrade-package ruff`, never by editing this file.
 # `uv run acidbase hooks` reports repos that still carry a drifting remote pin.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
@@ -61,3 +63,10 @@ repos:
         language: python
         pass_filenames: false
         files: ^(pyproject\.toml|scripts/sync_requirements\.py|requirements\.txt)$
+
+      # Agents do not co-author: the responsibility stays with the human who signs.
+      - id: no-agent-coauthors
+        name: no agent co-authors
+        entry: '(?i)^co-authored-by:.*(\[bot\]|aider|anthropic|chatgpt|claude|codex|copilot|cursor|devin|gemini|junie|openai|oz-agent|warp|windsurf)'
+        language: pygrep
+        stages: [commit-msg]

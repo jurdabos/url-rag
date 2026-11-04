@@ -122,3 +122,12 @@ webdrivers/
 
 # URL list (may contain secrets in query strings)
 include/urls.json
+
+# --- appended by acidbase scaffold ---
+*.npy
+.env.*
+.serena/
+.wdm/
+/.quarto/
+/_site/
+!.env.example
