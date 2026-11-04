@@ -3,11 +3,10 @@ name = "url-rag"
 version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
-# Lowered upper-bound floor from 3.13 to 3.12 so the Astronomer Runtime
-# base image (astrocrpublic.azurecr.io/runtime:3.0-14, which ships
-# Python 3.12.12) can build the image. acidbase>=0.1.1 also widened to
-# >=3.12; without that two-side change uv's solver could not satisfy
-# acidbase under 3.12 and the ONBUILD install-python-dependencies failed.
+# The upper bound must admit the Astronomer Runtime base image's Python.
+# Dockerfile pins runtime:3.3-2-python-3.13, because the plain 3.3-2 tag
+# ships Python 3.14. apache-airflow below and that runtime must stay on
+# the same minor release: the floors here are solved against this Airflow.
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "acidbase @ git+https://github.com/jurdabos/acidbase.git",
@@ -22,6 +21,7 @@ dependencies = [
     "dnspython>=2.9.0",
     "fsspec>=2026.6.0",
     "idna>=3.15",
+    "ijson>=3.3.0",
     "mako>=1.3.12",
     "openai>=2.24.0",
     "pendulum>=3.2.0",

@@ -243,3 +243,17 @@ def content_hash(text: str) -> str:
         The SHA-256 hex digest of the UTF-8 encoded text
     """
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def vector_ids(page: Iterable[object]) -> list[str]:
+    """
+    Extracts vector IDs from a page of Pinecone's ``index.list``.
+
+    Older clients yield plain strings and newer ones yield ``ListItem`` objects,
+    which ``index.delete`` rejects, so every caller goes through this.
+    Args:
+        page: One page from ``index.list``
+    Returns:
+        The vector IDs as strings
+    """
+    return [getattr(item, "id", item) for item in page]

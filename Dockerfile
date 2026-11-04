@@ -1,4 +1,4 @@
-FROM astrocrpublic.azurecr.io/runtime:3.0-14
+FROM astrocrpublic.azurecr.io/runtime:3.3-2-python-3.13
 
 # The Astronomer Runtime base image declares an ONBUILD chain that handles
 # the full image-build pipeline automatically:

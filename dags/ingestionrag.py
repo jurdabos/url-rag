@@ -24,7 +24,7 @@ from datetime import timedelta
 from airflow.sdk import Asset, Variable, dag, task
 from pendulum import datetime
 
-from include.url_filter import clean_urls, should_skip_url
+from include.url_filter import clean_urls, should_skip_url, vector_ids
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,7 @@ EMBEDDING_DIMENSION = 1536
 MAX_CONTENT_CHARS = 5_000_000
 DATA_DIR = "/tmp/rag_pipeline"
 CONTENT_HASHES_VAR = "rag_content_hashes"
+MAX_DELETE_BATCH = 1000  # to stay within Pinecone's limit on IDs per delete request
 
 rag_index = Asset("rag_index")
 
@@ -443,6 +444,7 @@ def rag_ingest():
             manifest = json.load(mfh)
         urls_to_purge = manifest.get("changed_urls", []) + manifest.get("removed_urls", [])
         total_deleted = 0
+        purge_failures = 0
         if urls_to_purge:
             logger.info("Purging vectors for %d changed/removed URLs", len(urls_to_purge))
             for url in urls_to_purge:
@@ -450,17 +452,23 @@ def rag_ingest():
                 ids_to_delete = []
                 try:
                     for page in index.list(prefix=prefix):
-                        ids_to_delete.extend(page)
+                        ids_to_delete.extend(vector_ids(page))
                 except Exception as exc:
+                    purge_failures += 1
                     logger.warning("Failed to list vectors for %s: %s", url[:80], exc)
-                if ids_to_delete:
-                    try:
-                        index.delete(ids=ids_to_delete)
-                        total_deleted += len(ids_to_delete)
-                        logger.debug("Deleted %d vectors for %s", len(ids_to_delete), url[:80])
-                    except Exception as exc:
-                        logger.error("Failed to delete vectors for %s: %s", url[:80], exc)
+                    continue
+                try:
+                    for start in range(0, len(ids_to_delete), MAX_DELETE_BATCH):
+                        index.delete(ids=ids_to_delete[start : start + MAX_DELETE_BATCH])
+                    total_deleted += len(ids_to_delete)
+                    logger.debug("Deleted %d vectors for %s", len(ids_to_delete), url[:80])
+                except Exception as exc:
+                    purge_failures += 1
+                    logger.error("Failed to delete vectors for %s: %s", url[:80], exc)
             logger.info("Deleted %d stale vectors total", total_deleted)
+        # Stopping here keeps the previous manifest, the only record of which URLs still need purging
+        if purge_failures:
+            raise RuntimeError(f"Could not purge {purge_failures} of {len(urls_to_purge)} URLs")
         batch_size = 100
         max_retries = 3
         max_meta_text = 30_000  # to stay safely under Pinecone's 40 KB metadata limit

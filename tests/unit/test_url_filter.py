@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,7 @@ from include.url_filter import (
     clean_urls,
     content_hash,
     should_skip_url,
+    vector_ids,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -132,8 +134,34 @@ class TestCleanUrls:
         assert clean_urls(["not a url", "https://example.com/x"]) == ["https://example.com/x"]
 
 
+class TestVectorIds:
+    """Covers the IDs handed to ``index.delete``, which rejects anything but strings."""
+
+    def test_extracts_ids_from_list_items(self):
+        """Newer Pinecone clients yield objects carrying an ``id`` attribute."""
+        page = [
+            SimpleNamespace(id="https://example.com/a::chunk_0"),
+            SimpleNamespace(id="https://example.com/a::chunk_1"),
+        ]
+        assert vector_ids(page) == ["https://example.com/a::chunk_0", "https://example.com/a::chunk_1"]
+
+    def test_passes_plain_strings_through(self):
+        """Older Pinecone clients yield the IDs themselves."""
+        assert vector_ids(["a::chunk_0"]) == ["a::chunk_0"]
+
+    def test_handles_an_empty_page(self):
+        """A prefix with no vectors yields nothing to delete."""
+        assert vector_ids([]) == []
+
+
 class TestWiring:
     """Covers how the pipeline reaches the shared filter, which unit tests cannot import through Airflow."""
+
+    def test_purge_reads_ids_and_cannot_fail_silently(self):
+        """A failed purge must stop the task before the manifest is saved, which would lose the URLs to purge."""
+        source = (REPO_ROOT / "dags" / "ingestionrag.py").read_text(encoding="utf-8")
+        assert "ids_to_delete.extend(vector_ids(page))" in source
+        assert source.index("raise RuntimeError") < source.index("Variable.set(CONTENT_HASHES_VAR")
 
     def test_ingestion_dag_cleans_at_load(self):
         """Cleans before anything else sees a URL, whichever source it came from."""
