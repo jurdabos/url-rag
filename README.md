@@ -51,6 +51,20 @@ uv run url-rag query "What is your real question?"
 - `PINECONE_API_KEY`
 - `PINECONE_INDEX_NAME` (defaults to `rag-index`)
 - `rag_source_urls` (optional JSON list; overrides `include/urls.json`)
+- `rag_alert_email` (recipient of alerts about unexpected failures)
+
+Alerts also need an Airflow connection named `smtp_default`. `scripts/set_smtp_connection.sh` loads it from the WSL
+keyring, so the app password never sits in a plain file. Rerun the script after `astro dev kill`, which wipes Airflow's
+database; `astro dev restart` keeps it.
+
+## Failure handling
+
+One page cannot stop an ingest. A link that fails in a known way, such as a 404 or a timeout, is logged and counted by
+reason. Any other exception points at a bug, so it is logged with its traceback, counted apart, and sent to
+`rag_alert_email` in one digest per run. Failed pages keep their existing vectors, and the next run retries them.
+
+The run fails when every URL fails, or when embedding, purging or upserting keeps failing, because those are outages
+and the hash manifest must not record work that did not happen.
 
 ## URL handling
 
@@ -73,6 +87,7 @@ url-rag/
 │   └── rag.py                 # Library-mode RAG pipeline (used by CLI)
 ├── tests/unit/                # pytest unit tests
 ├── include/
+│   ├── ingest.py              # Fetching and retry helpers for the ingestion DAG
 │   ├── url_filter.py          # Pure URL-cleaning, skip and content-hash helpers
 │   └── urls.json.example      # Format of the gitignored URL list
 ├── .github/workflows/lint.yml # ruff + gitleaks CI

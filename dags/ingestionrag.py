@@ -13,12 +13,14 @@ completion so downstream DAGs (like `rag_query`) know fresh data is available.
 `OPENAI_API_KEY`
 `PINECONE_API_KEY`
 `PINECONE_INDEX_NAME`
+`rag_alert_email` and the `smtp_default` connection, for alerts about unexpected failures
 URLs loaded from `include/urls.json` (git-ignored) and cleaned at load by
 `include/url_filter.py`, so fetches, logs and Pinecone only see cleaned URLs.
 """
 
 import json
 import logging
+from collections import Counter
 from datetime import timedelta
 
 from airflow.sdk import Asset, Variable, dag, task
@@ -114,8 +116,18 @@ MAX_CONTENT_CHARS = 5_000_000
 DATA_DIR = "/tmp/rag_pipeline"
 CONTENT_HASHES_VAR = "rag_content_hashes"
 MAX_DELETE_BATCH = 1000  # to stay within Pinecone's limit on IDs per delete request
+ALERT_RECIPIENT_VAR = "rag_alert_email"
+ALERT_SMTP_CONN_ID = "smtp_default"
+UNEXPECTED_FAILURES_PATH = f"{DATA_DIR}/unexpected_failures.json"
 
 rag_index = Asset("rag_index")
+
+
+def _write_unexpected(failures: list[dict[str, str]], urls_tried: int, documents_fetched: int) -> None:
+    """Saves this run's unexpected failures for the reporting task."""
+    report = {"failures": failures, "urls_tried": urls_tried, "documents_fetched": documents_fetched}
+    with open(UNEXPECTED_FAILURES_PATH, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, ensure_ascii=False)
 
 
 @dag(
@@ -138,10 +150,11 @@ def rag_ingest():
         import os
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        import requests
-        from bs4 import BeautifulSoup
+        from include.ingest import FETCH_ERRORS, describe_unexpected, failure_reason, fetch_document
 
         os.makedirs(DATA_DIR, exist_ok=True)
+        # Resetting the report first, so a crash below cannot resend the previous run's failures
+        _write_unexpected([], 0, 0)
         urls = clean_urls(json.loads(_get_var("rag_source_urls", _load_default_urls())))
         max_urls = int(_get_var("rag_max_urls", "0"))
         if max_urls > 0:
@@ -150,70 +163,62 @@ def rag_ingest():
 
         # Pre-filtering
         filtered_urls = []
-        pre_skipped = 0
+        skip_reasons: Counter[str] = Counter()
         for url in urls:
             reason = should_skip_url(url)
             if reason:
                 logger.debug("Pre-filter skip %s: %s", url, reason)
-                pre_skipped += 1
+                skip_reasons[reason.partition(" (")[0]] += 1  # to keep hosts and paths out of the report
             else:
                 filtered_urls.append(url)
+        pre_skipped = sum(skip_reasons.values())
         logger.info(
-            "Pre-filter: %d URLs kept, %d skipped (of %d total)",
+            "Pre-filter: %d URLs kept, %d skipped (of %d total): %s",
             len(filtered_urls),
             pre_skipped,
             len(urls),
+            dict(skip_reasons.most_common()),
         )
 
-        def _fetch_one(url: str) -> dict | None:
-            """Fetches a single URL. Returns doc dict or None on failure."""
+        def _fetch_one(url: str) -> tuple[dict | None, str | None]:
+            """Fetches a single URL. Returns the document, or None and the reason it failed."""
             try:
-                resp = requests.get(url, timeout=15, headers={"User-Agent": "AirflowRAG/1.0"})
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for el in soup(["script", "style", "nav", "footer", "header"]):
-                    el.decompose()
-                text = soup.get_text(separator="\n", strip=True)
-                if not text.strip():
-                    logger.warning("Empty content from %s, skipping", url)
-                    return None
-                if len(text) > MAX_CONTENT_CHARS:
-                    logger.info(
-                        "Truncating %s from %d to %d chars",
-                        url,
-                        len(text),
-                        MAX_CONTENT_CHARS,
-                    )
-                    text = text[:MAX_CONTENT_CHARS]
-                return {
-                    "url": url,
-                    "title": (soup.title.string if soup.title else url)[:200],
-                    "content": text,
-                }
-            except Exception as exc:
-                logger.warning("Skipping %s: %s", url, str(exc)[:200])
-                return None
+                return fetch_document(url, MAX_CONTENT_CHARS), None
+            except FETCH_ERRORS as exc:
+                reason = failure_reason(exc)
+                logger.warning("Skipping %s: %s (%s)", url, reason, str(exc)[:200])
+                return None, reason
+            except Exception as exc:  # to keep one page's bug from stopping the batch; it is reported apart
+                logger.exception("Unexpected failure on %s", url)
+                unexpected.append(describe_unexpected(url, exc))
+                return None, "unexpected"
 
         documents = []
-        fetch_skipped = 0
+        unexpected: list[dict[str, str]] = []
+        fetch_failures: Counter[str] = Counter()
         max_workers = int(_get_var("rag_fetch_workers", "10"))
         logger.info("Fetching %d URLs with %d workers", len(filtered_urls), max_workers)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             future_to_url = {pool.submit(_fetch_one, url): url for url in filtered_urls}
             for future in as_completed(future_to_url):
-                result = future.result()
-                if result is not None:
-                    documents.append(result)
+                document, failure = future.result()
+                if document is not None:
+                    documents.append(document)
                 else:
-                    fetch_skipped += 1
+                    fetch_failures[failure] += 1
         total_chars = sum(len(d["content"]) for d in documents)
         logger.info(
-            "Fetched %d docs (%d chars total), skipped %d (pre-filter) + %d (fetch errors)",
+            "Fetched %d docs (%d chars total), skipped %d (pre-filter) + %d (fetch errors): %s",
             len(documents),
             total_chars,
             pre_skipped,
-            fetch_skipped,
+            sum(fetch_failures.values()),
+            dict(fetch_failures.most_common()),
         )
+        _write_unexpected(unexpected, len(filtered_urls), len(documents))
+        # Every link failing is an outage, not a list of bad links
+        if filtered_urls and not documents:
+            raise RuntimeError(f"All {len(filtered_urls)} URLs failed: {dict(fetch_failures.most_common())}")
         # --- CDC: content hashing and change detection ---
         import hashlib
 
@@ -221,11 +226,10 @@ def rag_ingest():
         for doc in documents:
             doc["content_hash"] = hashlib.sha256(doc["content"].encode()).hexdigest()
             current_hashes[doc["url"]] = doc["content_hash"]
-        # Loading previous hash manifest
-        try:
-            previous_hashes = json.loads(Variable.get(CONTENT_HASHES_VAR))
-        except Exception:
-            previous_hashes = {}
+        # Loading previous hash manifest. Only a missing Variable means a first run: any other
+        # failure must stop the task, because an empty manifest cannot tell which URLs to purge.
+        previous_hashes = json.loads(Variable.get(CONTENT_HASHES_VAR, default="{}"))
+        if not previous_hashes:
             logger.info("No previous hash manifest found — treating all URLs as new")
         # Partitioning into changed vs. unchanged
         changed_docs = []
@@ -319,8 +323,10 @@ def rag_ingest():
         chunks to a new JSON file, and returns that file path.
         Tries OpenAI first; falls back to OpenRouter on auth failure.
         Uses smaller batches for OpenRouter and retries on transient errors.
+        A batch that keeps failing stops the task: skipping it would purge the
+        old vectors, add no new ones, and record the pages as done.
         """
-        import time
+        from include.ingest import with_retries
 
         with open(chunks_path, "r", encoding="utf-8") as fh:
             chunks = json.load(fh)
@@ -335,9 +341,18 @@ def rag_ingest():
         # Using smaller batches for OpenRouter to avoid empty responses
         is_openrouter = bool(prefix)
         batch_size = 20 if is_openrouter else 100
-        max_retries = 3
         embedded_chunks = []
         total_batches = (len(chunks) + batch_size - 1) // batch_size
+
+        def _embed_batch(texts: list[str], batch_num: int):
+            """Requests one batch of embeddings, rejecting an incomplete response."""
+            response = client.embeddings.create(input=texts, model=model)
+            if not response.data:
+                raise ValueError(f"Empty embedding response for batch {batch_num}")
+            if len(response.data) != len(texts):
+                raise ValueError(f"Batch {batch_num}: expected {len(texts)} embeddings, got {len(response.data)}")
+            return response
+
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
             texts = [chunk["text"] for chunk in batch]
@@ -350,48 +365,10 @@ def rag_ingest():
                 model,
             )
             # Retrying on transient failures (empty responses, timeouts)
-            response = None
-            for attempt in range(1, max_retries + 1):
-                try:
-                    response = client.embeddings.create(input=texts, model=model)
-                    if not response.data:
-                        raise ValueError(f"Empty embedding response for batch {batch_num}")
-                    if len(response.data) != len(texts):
-                        raise ValueError(
-                            f"Batch {batch_num}: expected {len(texts)} embeddings, got {len(response.data)}"
-                        )
-                    break
-                except Exception as exc:
-                    if attempt < max_retries:
-                        wait = 2**attempt
-                        logger.warning(
-                            "Batch %d attempt %d/%d failed (%s), retrying in %ds",
-                            batch_num,
-                            attempt,
-                            max_retries,
-                            exc,
-                            wait,
-                        )
-                        time.sleep(wait)
-                    else:
-                        logger.error(
-                            "Batch %d failed after %d attempts (%s), skipping %d chunks",
-                            batch_num,
-                            max_retries,
-                            exc,
-                            len(batch),
-                        )
-                        response = None
-            if response and response.data:
-                for chunk, embedding_data in zip(batch, response.data):
-                    embedded_chunks.append({**chunk, "embedding": embedding_data.embedding})
-        skipped = len(chunks) - len(embedded_chunks)
-        logger.info(
-            "Generated embeddings for %d/%d chunks (%d skipped)",
-            len(embedded_chunks),
-            len(chunks),
-            skipped,
-        )
+            response = with_retries(lambda: _embed_batch(texts, batch_num), label=f"Embedding batch {batch_num}")
+            for chunk, embedding_data in zip(batch, response.data):
+                embedded_chunks.append({**chunk, "embedding": embedding_data.embedding})
+        logger.info("Generated embeddings for %d chunks", len(embedded_chunks))
         out_path = f"{DATA_DIR}/embedded_chunks.json"
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump(embedded_chunks, fh)
@@ -409,6 +386,8 @@ def rag_ingest():
 
         import ijson
         from pinecone import Pinecone, ServerlessSpec
+
+        from include.ingest import with_retries
 
         pc = Pinecone(api_key=_get_var("PINECONE_API_KEY"))
         index_name = _get_var("PINECONE_INDEX_NAME", "rag-index")
@@ -470,40 +449,15 @@ def rag_ingest():
         if purge_failures:
             raise RuntimeError(f"Could not purge {purge_failures} of {len(urls_to_purge)} URLs")
         batch_size = 100
-        max_retries = 3
         max_meta_text = 30_000  # to stay safely under Pinecone's 40 KB metadata limit
         total_upserted = 0
-        total_skipped = 0
         batch_num = 0
         batch: list[dict] = []
 
         def _flush(vectors: list[dict], bnum: int) -> int:
-            """Upserts a batch with retries. Returns count upserted (0 on failure)."""
-            for attempt in range(1, max_retries + 1):
-                try:
-                    index.upsert(vectors=vectors)
-                    return len(vectors)
-                except Exception as exc:
-                    if attempt < max_retries:
-                        wait = 2**attempt
-                        logger.warning(
-                            "Upsert batch %d attempt %d/%d failed (%s), retrying in %ds",
-                            bnum,
-                            attempt,
-                            max_retries,
-                            exc,
-                            wait,
-                        )
-                        time.sleep(wait)
-                    else:
-                        logger.error(
-                            "Upsert batch %d failed after %d attempts (%s), skipping %d vectors",
-                            bnum,
-                            max_retries,
-                            exc,
-                            len(vectors),
-                        )
-                        return 0
+            """Upserts a batch with retries. A batch that keeps failing stops the task before the manifest is saved."""
+            with_retries(lambda: index.upsert(vectors=vectors), label=f"Upsert batch {bnum}")
+            return len(vectors)
 
         # Streaming JSON array items one by one to keep memory flat
         with open(embedded_path, "rb") as fh:
@@ -522,19 +476,13 @@ def rag_ingest():
                 )
                 if len(batch) >= batch_size:
                     batch_num += 1
-                    upserted = _flush(batch, batch_num)
-                    total_upserted += upserted
-                    if upserted == 0:
-                        total_skipped += len(batch)
+                    total_upserted += _flush(batch, batch_num)
                     logger.info("Upserted batch %d (%d total)", batch_num, total_upserted)
                     batch = []
         # Flushing remaining vectors
         if batch:
             batch_num += 1
-            upserted = _flush(batch, batch_num)
-            total_upserted += upserted
-            if upserted == 0:
-                total_skipped += len(batch)
+            total_upserted += _flush(batch, batch_num)
             logger.info("Upserted batch %d (%d total)", batch_num, total_upserted)
         # --- CDC: persisting the new hash manifest ---
         all_hashes = manifest.get("all_hashes", {})
@@ -544,16 +492,48 @@ def rag_ingest():
         result = {
             "index_name": index_name,
             "chunks_upserted": total_upserted,
-            "chunks_skipped": total_skipped,
             "chunks_deleted": total_deleted,
         }
         logger.info("Upsert complete: %s", result)
         return result
 
+    @task(trigger_rule="all_done")
+    def report_unexpected_failures() -> int:
+        """Emails one digest of this run's unexpected failures, if there were any.
+
+        This is a parallel branch off fetch_documents on purpose. Airflow derives a
+        run's state from its final tasks, so as a step after the upsert, a successful
+        email would turn a failed run green. As a second final task, either branch
+        failing fails the run: a broken mail setup stays visible without blocking
+        the ingest.
+        """
+        from html import escape
+
+        from airflow.providers.smtp.hooks.smtp import SmtpHook
+
+        from include.ingest import build_alert
+
+        with open(UNEXPECTED_FAILURES_PATH, "r", encoding="utf-8") as fh:
+            report = json.load(fh)
+        failures = report["failures"]
+        if not failures:
+            logger.info("No unexpected failures to report")
+            return 0
+        subject, body = build_alert(failures, report["urls_tried"], report["documents_fetched"])
+        with SmtpHook(smtp_conn_id=ALERT_SMTP_CONN_ID) as hook:
+            hook.send_email_smtp(
+                to=_get_var(ALERT_RECIPIENT_VAR),
+                subject=subject,
+                html_content=f"<pre>{escape(body)}</pre>",
+            )
+        logger.info("Sent an alert about %d unexpected failures", len(failures))
+        return len(failures)
+
     fetch_result = fetch_documents()
     chunks_path = chunk_documents(fetch_result["docs_path"])
     embedded_path = generate_embeddings(chunks_path)
     upsert_to_pinecone(embedded_path, fetch_result["manifest_path"])
+    fetch_result >> report_unexpected_failures()
 
 
 rag_ingest()

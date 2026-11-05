@@ -161,7 +161,7 @@ class TestWiring:
         """A failed purge must stop the task before the manifest is saved, which would lose the URLs to purge."""
         source = (REPO_ROOT / "dags" / "ingestionrag.py").read_text(encoding="utf-8")
         assert "ids_to_delete.extend(vector_ids(page))" in source
-        assert source.index("raise RuntimeError") < source.index("Variable.set(CONTENT_HASHES_VAR")
+        assert source.index('raise RuntimeError(f"Could not purge') < source.index("Variable.set(CONTENT_HASHES_VAR")
 
     def test_ingestion_dag_cleans_at_load(self):
         """Cleans before anything else sees a URL, whichever source it came from."""
