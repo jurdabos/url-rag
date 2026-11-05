@@ -4,6 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 ### Changed
+- `.env.example`: says where secrets go here, and why the acidbase keyring move does not apply.
 - `.gitignore`, `.gitleaks.toml`: dropped the blanket `*.sql` ignore, which kept new SQL files out of Git without a word, and added the `sql-password-literal` rule, because the upstream rules miss a password written as a SQL literal.
 - `.github/workflows/lint.yml`: the gitleaks download retries with `--retry 5`, because a transient 504 from GitHub's release host failed `lint` on code that was fine.
 - `dags/ingestionrag.py`: `fetch_documents` separates `FETCH_ERRORS`, the failures a link can cause by itself, from anything else, which points at a bug. Neither stops the batch, because pages from the web must not be able to block an unattended ingest, but a bug no longer poses as a bad link. The run reports pre-filter skips and fetch failures as counts by reason, and fails when every URL fails, because that is an outage. Fetching and retries move to `include/ingest.py`, where they can be unit tested, and tasks import it lazily to keep DAG parsing light.
