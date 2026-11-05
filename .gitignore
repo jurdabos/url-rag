@@ -71,7 +71,6 @@ Thumbs.db
 *.csv
 *.db
 *.gz
-*.sql
 *.sqlite
 *.sqlite3
 *.parquet

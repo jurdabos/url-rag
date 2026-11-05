@@ -21,3 +21,21 @@ regexes = [
     '''example[_-]?token''',
     '''\{\{[A-Z0-9_]+\}\}''',
 ]
+
+# The upstream rules look for assignments, so they miss a password written as a SQL literal.
+[[rules]]
+id = "sql-password-literal"
+description = "Literal password in a SQL role statement"
+regex = '''(?i)\b(?:alter|create)\s+(?:role|user)\b[^;\n]*?\b(?:password|identified\s+(?:with\s+\S+\s+)?by)\s+'([^'\n]{4,})[']'''
+secretGroup = 1
+keywords = ["password", "identified"]
+
+[[rules.allowlists]]
+description = "Variables from shell, Python and templates, and REAL placeholders"
+regexes = [
+    '''^\$''',
+    '''^%''',
+    '''^\{''',
+    '''^<''',
+    '''^REAL[A-Z0-9]*$''',
+]
