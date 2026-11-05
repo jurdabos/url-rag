@@ -64,7 +64,8 @@ reason. Any other exception points at a bug, so it is logged with its traceback,
 `rag_alert_email` in one digest per run. Failed pages keep their existing vectors, and the next run retries them.
 
 The run fails when every URL fails, or when embedding, purging or upserting keeps failing, because those are outages
-and the hash manifest must not record work that did not happen.
+and the hash manifest must not record work that did not happen. Any task that fails after its retries also emails
+`rag_alert_email`, so an outage does not go unseen on an unattended run.
 
 ## URL handling
 

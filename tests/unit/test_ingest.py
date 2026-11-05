@@ -15,6 +15,7 @@ from include.ingest import (
     MAX_ALERT_HOSTS,
     EmptyPageError,
     build_alert,
+    build_failure_alert,
     describe_unexpected,
     failure_reason,
     fetch_document,
@@ -255,6 +256,37 @@ class TestWithRetries:
         assert len(calls) == ingest.RETRY_ATTEMPTS
 
 
+class TestBuildFailureAlert:
+    """Covers the email for a run that stopped, which an unattended ingest would otherwise hide."""
+
+    def test_names_the_task_and_the_run(self):
+        """Says where the run stopped, in the subject as well."""
+        subject, body = build_failure_alert("upsert_to_pinecone", "manual__1", _raised(RuntimeError("Could not purge")))
+        assert "upsert_to_pinecone" in subject
+        assert "upsert_to_pinecone failed" in body
+        assert "manual__1" in body
+        assert "Could not purge" in body
+
+    def test_shows_the_failure_reasons_of_an_outage(self):
+        """A network outage reads as what it is, from the counts in the exception."""
+        body = build_failure_alert("fetch_documents", "r", _raised(RuntimeError("All 3 URLs failed: {'dns': 3}")))[1]
+        assert "All 3 URLs failed: {'dns': 3}" in body
+
+    def test_keeps_urls_out_of_the_email(self):
+        """An exception quoting a URL must not carry it out of the stack."""
+        body = build_failure_alert("t", "r", _raised(ValueError("bad https://shop.example/a?x=1 here")))[1]
+        assert "shop.example" not in body
+
+    def test_caps_the_traceback(self):
+        """A huge message must not produce a huge email."""
+        body = build_failure_alert("t", "r", _raised(ValueError("x" * 50_000)))[1]
+        assert len(body) < ingest.MAX_ALERT_TRACEBACK_CHARS + 500
+
+    def test_survives_a_missing_exception(self):
+        """Airflow may have no exception to hand over, and reporting must not fail on that."""
+        assert "no exception" in build_failure_alert("t", "r", None)[1]
+
+
 class TestSmtpScript:
     """Covers the connection that scripts/set_smtp_connection.sh stores."""
 
@@ -296,6 +328,10 @@ class TestDagWiring:
         assert "fetch_result >> report_unexpected_failures()" in DAG_SOURCE
         assert 'upsert_to_pinecone(embedded_path, fetch_result["manifest_path"]) >>' not in DAG_SOURCE
         assert '@task(trigger_rule="all_done")\n    def report_unexpected_failures' in DAG_SOURCE
+
+    def test_every_task_alerts_on_final_failure(self):
+        """An outage turns a run red with nobody watching, so every task carries the callback."""
+        assert '"on_failure_callback": _alert_run_failure' in DAG_SOURCE
 
     def test_the_recipient_stays_out_of_the_code(self):
         """The repository is public, so the address lives in an Airflow Variable."""

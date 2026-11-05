@@ -156,6 +156,27 @@ def build_alert(failures: list[dict[str, str]], urls_tried: int, documents_fetch
     return subject, "\n".join(lines)
 
 
+def build_failure_alert(task_id: str, run_id: str, exc: BaseException | None) -> tuple[str, str]:
+    """
+    Describes a run that stopped, such as during a network or Pinecone outage.
+    Args:
+        task_id: The task that failed for good
+        run_id: The run it belongs to
+        exc: The exception that stopped it, when Airflow has one
+    Returns:
+        The subject and the plain-text body
+    """
+    detail = "".join(traceback.format_exception(exc)) if exc else "Airflow recorded no exception."
+    lines = [
+        f"Task {task_id} failed after its retries, so run {run_id} stopped.",
+        "The hash manifest is only saved at the very end, so the next run starts this work over.",
+        "The ingest runs every 14 days, so trigger rag_ingest by hand if that is too long to wait.",
+        "",
+        _URL.sub("URL", detail)[-MAX_ALERT_TRACEBACK_CHARS:],
+    ]
+    return f"[url-rag] run failed at {task_id}", "\n".join(lines)
+
+
 def with_retries(
     action: Callable[[], T],
     *,

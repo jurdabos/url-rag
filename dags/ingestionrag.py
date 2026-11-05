@@ -130,12 +130,37 @@ def _write_unexpected(failures: list[dict[str, str]], urls_tried: int, documents
         json.dump(report, fh, ensure_ascii=False)
 
 
+def _send_alert(subject: str, body: str) -> None:
+    """Emails the alert recipient through the shared SMTP connection."""
+    from html import escape
+
+    from airflow.providers.smtp.hooks.smtp import SmtpHook
+
+    with SmtpHook(smtp_conn_id=ALERT_SMTP_CONN_ID) as hook:
+        hook.send_email_smtp(
+            to=_get_var(ALERT_RECIPIENT_VAR),
+            subject=subject,
+            html_content=f"<pre>{escape(body)}</pre>",
+        )
+
+
+def _alert_run_failure(context: dict) -> None:
+    """Emails that a task failed for good, which nobody would otherwise see on an unattended run.
+
+    Airflow calls this once retries are used up, and only logs an exception raised
+    in here, so a broken mail setup cannot change the state of the run.
+    """
+    from include.ingest import build_failure_alert
+
+    _send_alert(*build_failure_alert(context["ti"].task_id, context["run_id"], context.get("exception")))
+
+
 @dag(
     start_date=datetime(2026, 3, 3),
     schedule=timedelta(days=14),
     catchup=False,
     doc_md=__doc__,
-    default_args={"owner": "data-team", "retries": 2},
+    default_args={"owner": "data-team", "retries": 2, "on_failure_callback": _alert_run_failure},
     tags=["rag", "ai", "ingestion", "airflow", "orchestration"],
 )
 def rag_ingest():
@@ -507,10 +532,6 @@ def rag_ingest():
         failing fails the run: a broken mail setup stays visible without blocking
         the ingest.
         """
-        from html import escape
-
-        from airflow.providers.smtp.hooks.smtp import SmtpHook
-
         from include.ingest import build_alert
 
         with open(UNEXPECTED_FAILURES_PATH, "r", encoding="utf-8") as fh:
@@ -519,13 +540,7 @@ def rag_ingest():
         if not failures:
             logger.info("No unexpected failures to report")
             return 0
-        subject, body = build_alert(failures, report["urls_tried"], report["documents_fetched"])
-        with SmtpHook(smtp_conn_id=ALERT_SMTP_CONN_ID) as hook:
-            hook.send_email_smtp(
-                to=_get_var(ALERT_RECIPIENT_VAR),
-                subject=subject,
-                html_content=f"<pre>{escape(body)}</pre>",
-            )
+        _send_alert(*build_alert(failures, report["urls_tried"], report["documents_fetched"]))
         logger.info("Sent an alert about %d unexpected failures", len(failures))
         return len(failures)
 
