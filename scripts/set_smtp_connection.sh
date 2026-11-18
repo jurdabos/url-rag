@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Loads the alert sender from the WSL keyring into Airflow's connection store, so the
-# Gmail app password never sits in a plain file. Containers cannot reach the keyring,
-# which stays the durable copy. Rerun after `astro dev kill`, which wipes Airflow's
-# database; `astro dev restart` keeps it. The keyring prompts for its master password.
+# Loads the alert sender from the keyring into Airflow's connection store, so the
+# Gmail app password never sits in a plain file. In WSL the keyring is the Windows
+# store, reached through acidbase's bridge once `acidbase keyring wsl-setup` has run,
+# and it asks for nothing. Containers cannot reach it, so it stays the durable copy.
+# Rerun after `astro dev kill`, which wipes Airflow's database; `astro dev restart`
+# keeps it.
 # It ends by sending a test email to the `rag_alert_email` Variable.
 #
 # Usage: GMAIL_2_USER=REALADDRESS bash scripts/set_smtp_connection.sh
@@ -15,7 +17,7 @@ scheduler=$(docker ps --format '{{.Names}}' --filter 'name=scheduler' | grep -m1
 }
 password=$(keyring get email gmail_2_password)
 if [ -z "$password" ]; then
-  echo "No gmail_2_password under the email service in the keyring." >&2
+  echo "No gmail_2_password under the email service in the keyring. In WSL, run acidbase keyring wsl-setup first." >&2
   exit 1
 fi
 # The password travels over stdin, so it never appears in a process list

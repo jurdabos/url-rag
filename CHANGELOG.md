@@ -4,6 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 ### Changed
+- `scripts/set_smtp_connection.sh`: no longer asks for a master password. WSL's keyring now reads the Windows store through acidbase's bridge, after `acidbase keyring wsl-setup`, and a missing password says to run it.
 - `.env.example`: says where secrets go here, and why the acidbase keyring move does not apply.
 - `.gitignore`, `.gitleaks.toml`: dropped the blanket `*.sql` ignore, which kept new SQL files out of Git without a word, and added the `sql-password-literal` rule, because the upstream rules miss a password written as a SQL literal.
 - `.github/workflows/lint.yml`: the gitleaks download retries with `--retry 5`, because a transient 504 from GitHub's release host failed `lint` on code that was fine.
