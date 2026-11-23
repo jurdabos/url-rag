@@ -9,7 +9,7 @@ readme = "README.md"
 # the same minor release: the floors here are solved against this Airflow.
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "acidbase @ git+https://github.com/jurdabos/acidbase.git",
+    "acidbase @ git+https://github.com/jurdabos/acidbase.git@v0.3.0",
     "aiosmtplib>=5.1.1",
     "anyio>=4.14.2",
     "apache-airflow>=3.3.0",

@@ -17,8 +17,8 @@ wheels = [
 
 [[package]]
 name = "acidbase"
-version = "0.2.0"
-source = { git = "https://github.com/jurdabos/acidbase.git#feda4360a59680400bbb67937008288e7cfbfac7" }
+version = "0.3.0"
+source = { git = "https://github.com/jurdabos/acidbase.git?rev=v0.3.0#66b2c694c67c83109466385d793bb50993bd14e9" }
 dependencies = [
     { name = "click" },
     { name = "keyring" },
@@ -2294,7 +2294,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "acidbase", git = "https://github.com/jurdabos/acidbase.git" },
+    { name = "acidbase", git = "https://github.com/jurdabos/acidbase.git?rev=v0.3.0" },
     { name = "aiosmtplib", specifier = ">=5.1.1" },
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "apache-airflow", specifier = ">=3.3.0" },
