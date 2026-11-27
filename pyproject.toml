@@ -1,7 +1,7 @@
 [project]
 name = "url-rag"
 version = "0.1.1"
-description = "Add your description here"
+description = "Retrieval-augmented generation pipeline on Apache Airflow, Pinecone and OpenAI"
 readme = "README.md"
 # The upper bound must admit the Astronomer Runtime base image's Python.
 # Dockerfile pins runtime:3.3-2-python-3.13, because the plain 3.3-2 tag

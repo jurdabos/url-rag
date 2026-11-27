@@ -4,6 +4,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 ### Changed
+- `pyproject.toml`: the project description replaces the `uv init` placeholder.
 - `pyproject.toml`, `uv.lock`: pins acidbase to its release tag `v0.3.0` instead of the mirror's default branch.
   uv ignores a version floor such as `acidbase>=0.3.0` on a git source, so the tag is what states the acidbase this repo needs, starting with the shared `clean` command it imports.
   A later tag change relocks on the next `uv run`.
